@@ -28,7 +28,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     /// Constructs a TcpConnection with a connected sockfd
     ///
     /// User should not create this object.
-    TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr& localAddr, const InetAddr& peerAddr);
+    explicit TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr& localAddr, const InetAddr& peerAddr);
     ~TcpConnection();
 
     EventLoop* getLoop() const { return loop_; }

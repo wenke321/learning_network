@@ -4,7 +4,6 @@
 #include <unistd.h>
 
 #include <cassert>
-#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <string>
@@ -84,7 +83,7 @@ void TcpConnection::send(Buffer* buf)
         {
             // void (TcpConnection::*fp)(const stringPiece& message) = &TcpConnection::sendInLoop;
             std::string data = buf->retrieveAllAsString();
-            loop_->runInLoop([this, data] { sendInLoop(data.data(), data.size()); });
+            loop_->runInLoop([=] { sendInLoop(data.data(), data.size()); });
             // std::forward<string>(message)));
         }
     }
@@ -147,6 +146,7 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
 
 void TcpConnection::shutdown()
 {
+    LOG_INFO << "TcpConnection::shutdown,fd=" << channel_->fd_() << " local addr=" << localAddr_.ipPortStr();
     // FIXME: use compare and swap
     if (state_ == kConnected)
     {

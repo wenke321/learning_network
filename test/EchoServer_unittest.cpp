@@ -37,6 +37,7 @@ class EchoServer
 
         g_request_count++;
         conn->send("hello\n");
+        conn->send("quit\n");
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)
@@ -52,7 +53,7 @@ class EchoServer
         {
             loop_->quit_();
         }
-        std::cout << msg << "\n";
+
         conn->send(msg);
     }
 
@@ -77,7 +78,7 @@ void qps_printer()
 int main(int argc, char* argv[])
 {
     // std::thread(qps_printer).detach();
-    Logger::setLogLevel(Logger::TRACE);
+    Logger::setLogLevel(Logger::INFO);
     // asyncLog.start();
     // Logger::setOutput(logoutput);
 

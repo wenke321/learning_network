@@ -30,7 +30,7 @@ Acceptor::~Acceptor()
 
 void Acceptor::listen()
 {
-    LOG_TRACE << " Acceptor::listen";
+    LOG_DEBUG << " Acceptor::listen";
     loop_->assertInLoopThread();
     listening_ = true;
     acceptSocket_.listen();
@@ -39,7 +39,7 @@ void Acceptor::listen()
 
 void Acceptor::handleRead()
 {
-    LOG_TRACE << "Acceptor::handleRead";
+    LOG_DEBUG << "Acceptor::handleRead";
     loop_->assertInLoopThread();
     InetAddr peerAddr;
 
@@ -48,10 +48,10 @@ void Acceptor::handleRead()
         int connfd = acceptSocket_.accept(&peerAddr);
         if (connfd >= 0)
         {
-            LOG_TRACE << "new connection come";
+            LOG_DEBUG << "new connection come";
             if (newConnectionCallback_)
             {
-                LOG_TRACE << "newConnectionCallback_";
+                LOG_DEBUG << "newConnectionCallback_";
                 newConnectionCallback_(connfd, peerAddr);
             }
             else

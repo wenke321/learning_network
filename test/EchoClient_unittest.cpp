@@ -71,7 +71,7 @@ class EchoClient
 
 int main(int argc, char* argv[])
 {
-    Logger::setLogLevel(Logger::TRACE);
+    Logger::setLogLevel(Logger::INFO);
     LOG_INFO << "pid = " << getpid() << ", tid = " << CurrentThread::tid();
     if (argc > 1)
     {

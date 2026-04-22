@@ -7,6 +7,7 @@
 
 #include "CountDownLatch.h"
 #include "LogFile.h"
+#include "Logger.h"
 #include "Thread.h"
 
 AsyncLogger::AsyncLogger(const std::string& basename_, off_t rollSize_, int flushInterval_) : running(0), rollSize(rollSize_), flushInterval(flushInterval_), basename(basename_), thread([&] { threadFunc(); }, "Logging"), mutex(), cond(mutex), latch(1)
@@ -28,6 +29,7 @@ void AsyncLogger::start()
     running = true;
     thread.start();
     latch.wait();
+    LOG_INFO << "AsyncLogger::start";
 }
 
 void AsyncLogger::stop()

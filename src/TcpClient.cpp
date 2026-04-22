@@ -94,6 +94,7 @@ void TcpClient::stop()
 
 void TcpClient::newConnection(int sockfd)
 {
+    LOG_DEBUG << "TcpClient::newConnection";
     loop_->assertInLoopThread();
     InetAddr peerAddr(sockOption::getPeerAddr(sockfd));
     char buf[32];
@@ -119,6 +120,7 @@ void TcpClient::newConnection(int sockfd)
 
 void TcpClient::removeConnection(const TcpConnectionPtr& conn)
 {
+    LOG_DEBUG << "TcpClient::removeConnection";
     loop_->assertInLoopThread();
     assert(loop_ == conn->getLoop());
 

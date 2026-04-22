@@ -48,6 +48,8 @@ void EventLoop::Loop()
         pollReturnTime = epoller->Poll(PollTimeout, activeChannels);
 
         eventHandling = true;
+
+        LOG_DEBUG << "Loop handle events";
         for (Channel* active_ch : activeChannels)
         {
             cur_activeCh = active_ch;
@@ -56,7 +58,8 @@ void EventLoop::Loop()
         eventHandling          = false;
         cur_activeCh           = NULL;
         callingPendingFunctors = true;
-        LOG_TRACE << "do pendingFunctors";
+
+        LOG_DEBUG << " do pendingFunctors";
         for (Functor f : pendingFunctors)
         {
             f();

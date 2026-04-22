@@ -45,7 +45,6 @@ Timestamp Epoller::Poll(int timeout, std::vector<Channel*>& activeChannels_)
         }
     }
 
-    LOG_DEBUG << "Epoller::Poll return";
     return now;
 }
 
@@ -62,7 +61,7 @@ void Epoller::fillActiveChannels(int nfds, std::vector<Channel*>& activeChannals
 
 void Epoller::updateChannel(Channel* ch)
 {
-    LOG_INFO << "Epoller::updateChannel,fd=" << ch->fd_();
+    LOG_DEBUG << "Epoller::updateChannel,fd=" << ch->fd_();
     Poller::assertInLoopThread();
 
     const int idx = ch->index_();
@@ -92,6 +91,7 @@ void Epoller::updateChannel(Channel* ch)
         {
             ch->setIndex(Channel::ch_deleted);
             update(EPOLL_CTL_DEL, ch);
+            m_channels.erase(ch->fd_());
         }
         else
             update(EPOLL_CTL_MOD, ch);
@@ -112,10 +112,11 @@ void Epoller::removeChannel(Channel* ch)
 
 void Epoller::update(int op, Channel* ch)
 {
+    LOG_DEBUG << "Epoller::update";
     Poller::assertInLoopThread();
     int fd = ch->fd_();
     struct epoll_event ev;
-    ev.data.fd  = fd;
+    ev.events   = ch->listen_events_() | EPOLLET;
     ev.data.ptr = ch;
     if (::epoll_ctl(epfd, op, fd, &ev) < 0)
     {

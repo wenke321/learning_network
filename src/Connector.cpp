@@ -52,16 +52,16 @@ void Connector::stopInLoop()
     if (state_ == Connecting)
     {
         setState(Disconnected);
-        int sockfd = removeAndResetChannel();
-        retry(sockfd);
+        int serverfd = removeAndResetChannel();
+        retry(serverfd);
     }
 }
 
 void Connector::connect()
 {
-    int sockfd = sockOption::createNonblockingOrDie(serverAddr_.family());
+    int serverfd = sockOption::createNonblockingOrDie(serverAddr_.family());
 
-    int ret        = sockOption::connect(sockfd, serverAddr_.getSockAddr());
+    int ret        = sockOption::connect(serverfd, serverAddr_.getSockAddr());
     int savedErrno = (ret == 0) ? 0 : errno;
     LOG_INFO << "Connector::connect";
     switch (savedErrno)
@@ -71,7 +71,7 @@ void Connector::connect()
             LOG_INFO << "EINPROGRESS,may succeed";
         case EINTR:
         case EISCONN:
-            connecting(sockfd);
+            connecting(serverfd);
             break;
 
         case EAGAIN:
@@ -79,7 +79,7 @@ void Connector::connect()
         case EADDRNOTAVAIL:
         case ECONNREFUSED:
         case ENETUNREACH:
-            retry(sockfd);
+            retry(serverfd);
             break;
 
         case EACCES:
@@ -90,12 +90,12 @@ void Connector::connect()
         case EFAULT:
         case ENOTSOCK:
             LOG_SYSERR << "connect error in Connector::startInLoop " << savedErrno;
-            sockOption::close(sockfd);
+            sockOption::close(serverfd);
             break;
 
         default:
             LOG_SYSERR << "Unexpected error in Connector::startInLoop " << savedErrno;
-            sockOption::close(sockfd);
+            sockOption::close(serverfd);
             // connectErrorCallback_();
             break;
     }
@@ -110,47 +110,12 @@ void Connector::restart()
     startInLoop();
 }
 
-bool Connector::checkConnect(int sock)
+void Connector::connecting(int serverfd)
 {
-    LOG_INFO << "Connector::checkConnect,use select";
-    // 使用 select 等待可写
-    fd_set wset;
-    FD_ZERO(&wset);
-    FD_SET(sock, &wset);
-
-    struct timeval tv = {1, 0};
-    int ret           = ::select(sock + 1, NULL, &wset, NULL, &tv);
-    if (ret <= 0)
-    {
-        // 超时或出错
-        LOG_ERROR << "select failed! fd=" << sock;
-        return 0;
-    }
-
-    // 检查 socket 错误状态
-    int error     = 0;
-    socklen_t len = sizeof(error);
-    if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &error, &len) < 0)
-    {
-        LOG_ERROR << "getsockopt failed";
-        return 0;
-    }
-
-    if (error != 0)
-    {
-        LOG_ERROR << "nonblock connect,Connector::checkConnect failed! fd=" << sock;
-        return 0;
-    }
-    LOG_INFO << "Connector::checkConnect succeed,fd=" << sock;
-    return true;
-}
-
-void Connector::connecting(int sockfd)
-{
-    if (!checkConnect(sockfd)) retry(sockfd);
+    // if (!checkConnect(serverfd)) retry(serverfd);
     setState(Connecting);
     assert(!channel_);
-    channel_.reset(new Channel(sockfd, loop_));
+    channel_.reset(new Channel(serverfd, loop_));
     channel_->set_write_callback([this] { handleWrite(); });  // FIXME: unsafe
     channel_->set_error_callback([this] { handleError(); });  // FIXME: unsafe
 
@@ -161,44 +126,46 @@ int Connector::removeAndResetChannel()
 {
     channel_->DisableAll();
     channel_->remove();
-    int sockfd = channel_->fd_();
+    int serverfd = channel_->fd_();
     // Can't reset channel_ here, because we are inside Channel::handleEvent
     loop_->queueInLoop([this] { resetChannel(); });  // FIXME: unsafe
-    return sockfd;
+    return serverfd;
 }
 
 void Connector::resetChannel() { channel_.reset(); }
 
 void Connector::handleWrite()
 {
-    LOG_TRACE << "Connector::handleWrite " << state_;
+    LOG_DEBUG << " Connector::handleWrite " << state_;
 
     if (state_ == Connecting)
     {
-        int sockfd = removeAndResetChannel();
-        int err    = sockOption::getSocketError(sockfd);
+        // int serverfd = removeAndResetChannel();
+        int fd  = channel_->fd_();
+        int err = sockOption::getSocketError(fd);
         if (err)
         {
             LOG_WARN << "Connector::handleWrite - SO_ERROR = " << err << " " << strerrorInfo(err);
-            retry(sockfd);
+            retry(fd);
         }
-        else if (sockOption::isSelfConnect(sockfd))
+        else if (sockOption::isSelfConnect(fd))
         {
             LOG_WARN << "Connector::handleWrite - Self connect";
-            retry(sockfd);
+            retry(fd);
         }
         else
         {
-            LOG_INFO << "connect established";
+            LOG_DEBUG << "connect established";
+            channel_->DisableAll();
             setState(Connected);
             if (connect_)
             {
-                newConnectionCallback_(sockfd);
+                newConnectionCallback_(fd);
             }
             else
             {
-                LOG_ERROR << "bool connect_=0,close fd=" << sockfd;
-                sockOption::close(sockfd);
+                LOG_ERROR << "bool connect_=0,close fd=" << fd;
+                sockOption::close(fd);
             }
         }
     }
@@ -211,20 +178,20 @@ void Connector::handleWrite()
 
 void Connector::handleError()
 {
-    LOG_ERROR << "Connector::handleError state=" << state_;
+    LOG_DEBUG << "Connector::handleError state=" << state_;
     if (state_ == Connecting)
     {
-        int sockfd = removeAndResetChannel();
-        int err    = sockOption::getSocketError(sockfd);
+        int serverfd = removeAndResetChannel();
+        int err      = sockOption::getSocketError(serverfd);
         LOG_TRACE << "SO_ERROR = " << err << " " << strerrorInfo(err);
-        retry(sockfd);
+        retry(serverfd);
     }
 }
 
-void Connector::retry(int sockfd)
+void Connector::retry(int serverfd)
 {
-    LOG_INFO << "retry connect,fd=" << sockfd;
-    sockOption::close(sockfd);
+    LOG_DEBUG << "retry connect,fd=" << serverfd;
+    sockOption::close(serverfd);
     setState(Disconnected);
     if (connect_)
     {

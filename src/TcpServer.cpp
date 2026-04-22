@@ -47,7 +47,7 @@ void TcpServer::start()
 
 void TcpServer::newConnection(int sockfd, InetAddr peerAddr)
 {
-    LOG_TRACE << "TcpServer::newConnection";
+    LOG_DEBUG << "TcpServer::newConnection";
     loop_->assertInLoopThread();
     EventLoop* ioLoop = threadPool_->getNextLoop();
     char buf[64];
