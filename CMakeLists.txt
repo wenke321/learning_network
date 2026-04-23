@@ -24,7 +24,6 @@ set(SOURCES
     ${SRC_DIR}/Connector.cpp
     ${SRC_DIR}/CountDownLatch.cpp
     ${SRC_DIR}/CurrentThread.cpp
-    ${SRC_DIR}/Epoller.cpp
     ${SRC_DIR}/EventLoop.cpp
     ${SRC_DIR}/EventloopThread.cpp
     ${SRC_DIR}/EventloopThreadPool.cpp

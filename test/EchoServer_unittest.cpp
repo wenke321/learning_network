@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <thread>
 
+#include "Thread.h"
+
 std::atomic<int> g_request_count{0};
 
 #include <unistd.h>
@@ -37,13 +39,12 @@ class EchoServer
 
         g_request_count++;
         conn->send("hello\n");
-        conn->send("quit\n");
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)
     {
         std::string msg(buf->retrieveAllAsString());
-        LOG_TRACE << conn->name() << " recv " << msg.size() << " bytes at " << Timestamp::now().toStr();
+        LOG_DEBUG << conn->name() << " recv " << msg.size() << " bytes :" << " " << msg;
         if (msg == "exit\n")
         {
             conn->send("bye\n");
@@ -54,7 +55,7 @@ class EchoServer
             loop_->quit_();
         }
 
-        conn->send(msg);
+        // conn->send(msg);
     }
 
     EventLoop* loop_;
@@ -71,14 +72,15 @@ void qps_printer()
     {
         int last = g_request_count.exchange(0);
         printf("QPS: %d\n", last);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        sleep(1);
     }
 }
 
 int main(int argc, char* argv[])
 {
-    // std::thread(qps_printer).detach();
-    Logger::setLogLevel(Logger::INFO);
+    // Thread t(qps_printer, "qps");
+    // t.start();
+    Logger::setLogLevel(Logger::DEBUG);
     // asyncLog.start();
     // Logger::setOutput(logoutput);
 
@@ -89,11 +91,12 @@ int main(int argc, char* argv[])
         numThreads = atoi(argv[1]);
     }
 
-    EventLoop loop;
+    EventLoop loop;  // acceptor
     InetAddr listenAddr(8080, false, 0);
     EchoServer server(&loop, listenAddr);
 
     server.start();
 
     loop.Loop();
+    // t.join();
 }

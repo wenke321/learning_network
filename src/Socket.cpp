@@ -49,7 +49,7 @@ void Socket::listen() const { sockOption::listenOrDie(fd); }
 
 int Socket::accept(InetAddr* peerAddr) const
 {
-    LOG_DEBUG << "Socket::accept";
+    LOG_TRACE << "Socket::accept";
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     int connfd = sockOption::accept(fd, &addr);

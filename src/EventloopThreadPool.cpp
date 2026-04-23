@@ -33,7 +33,7 @@ void EventloopThreadPool::start(const ThreadInitCallback& cb_)
 
 EventLoop* EventloopThreadPool::getNextLoop()
 {
-    LOG_DEBUG << "EventloopThreadPool::getNextLoop";
+    LOG_TRACE << "EventloopThreadPool::getNextLoop";
     assert(started);
     baseLoop->assertInLoopThread();
     if (loops.empty()) return baseLoop;

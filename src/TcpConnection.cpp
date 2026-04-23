@@ -6,7 +6,9 @@
 #include <cassert>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "Buffer.h"
 #include "Channel.h"
@@ -24,19 +26,34 @@ void defaultConnectionCallback(const TcpConnectionPtr& conn)
 
 void defaultMessageCallback(const TcpConnectionPtr&, Buffer* buf) { buf->retrieveAll(); }
 
-TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int sockfd, const InetAddr& localAddr, const InetAddr& peerAddr) : loop_(loop), name_(nameArg), state_(kConnecting), reading_(true), socket_(new Socket(sockfd)), channel_(new Channel(sockfd, loop)), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
+TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int sockfd, const InetAddr& localAddr, const InetAddr& peerAddr) : loop_(loop), name_(nameArg), state_(kConnecting), reading_(true), socket_(new Socket(sockfd)), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
 {
+    channel_.reset(loop->add_channel(sockfd));
     channel_->set_read_callback([this] { handleRead(); });
     channel_->set_write_callback([this] { handleWrite(); });
     channel_->set_close_callback([this] { handleClose(); });
     channel_->set_error_callback([this] { handleError(); });
-    LOG_DEBUG << "TcpConnection::ctor[" << name_ << "] at " << this << " fd=" << sockfd;
+    LOG_DEBUG << " TcpConnection::ctor[" << name_ << "] at " << this << " fd=" << sockfd;
+    socket_->setKeepAlive(true);
+}
+
+TcpConnection::TcpConnection(std::unique_ptr<Channel>& ch, const std::string& name, const InetAddr& localAddr, const InetAddr& peerAddr) : name_(name), state_(kConnecting), reading_(true), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
+{
+    channel_ = std::move(ch);
+    loop_    = channel_->owner_loop();
+    socket_  = std::make_unique<Socket>(channel_->fd_());
+
+    channel_->set_read_callback([this] { handleRead(); });
+    channel_->set_write_callback([this] { handleWrite(); });
+    channel_->set_close_callback([this] { handleClose(); });
+    channel_->set_error_callback([this] { handleError(); });
+    LOG_DEBUG << " TcpConnection::ctor[" << name_ << "] at " << this << " fd=" << channel_->fd_();
     socket_->setKeepAlive(true);
 }
 
 TcpConnection::~TcpConnection()
 {
-    LOG_DEBUG << "TcpConnection::dtor[" << name_ << "] at " << this << " fd=" << channel_->fd_() << " state=" << stateToString();
+    LOG_DEBUG << " TcpConnection::dtor[" << name_ << "] at " << this << " fd=" << channel_->fd_() << " state=" << stateToString();
     assert(state_ == kDisconnected);
 }
 
@@ -146,10 +163,10 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
 
 void TcpConnection::shutdown()
 {
-    LOG_INFO << "TcpConnection::shutdown,fd=" << channel_->fd_() << " local addr=" << localAddr_.ipPortStr();
     // FIXME: use compare and swap
     if (state_ == kConnected)
     {
+        LOG_INFO << "TcpConnection::shutdown,fd=" << channel_->fd_() << " local addr=" << localAddr_.ipPortStr();
         setState(kDisconnecting);
         // FIXME: shared_from_this()?
         loop_->runInLoop(std::bind(&TcpConnection::shutdownInLoop, this));
@@ -158,9 +175,11 @@ void TcpConnection::shutdown()
 
 void TcpConnection::shutdownInLoop()
 {
+    LOG_DEBUG << " TcpConnection::shutdownInLoop";
     loop_->assertInLoopThread();
     if (!channel_->isWriting())
     {
+        LOG_DEBUG << " !channel_->isWriting";
         // we are not writing
         socket_->shutdownWrite();
     }
@@ -267,6 +286,7 @@ void TcpConnection::stopReadInLoop()
 
 void TcpConnection::connectEstablished()
 {
+    LOG_DEBUG << " ";
     loop_->assertInLoopThread();
     assert(state_ == kConnecting);
     setState(kConnected);
@@ -278,13 +298,14 @@ void TcpConnection::connectEstablished()
 
 void TcpConnection::connectDestroyed()
 {
+    LOG_DEBUG << " ";
     loop_->assertInLoopThread();
     if (state_ == kConnected)
     {
         setState(kDisconnected);
         channel_->DisableAll();
 
-        connectionCallback_(shared_from_this());
+        // connectionCallback_(shared_from_this());
     }
     channel_->remove();
 }
@@ -351,13 +372,16 @@ void TcpConnection::handleClose()
 {
     loop_->assertInLoopThread();
     LOG_TRACE << "fd = " << channel_->fd_() << " state = " << stateToString();
-    assert(state_ == kConnected || state_ == kDisconnecting);
-    // we don't close fd, leave it to dtor, so we can find leaks easily.
-    setState(kDisconnected);
+    // assert(state_ == kConnected || state_ == kDisconnecting);
+    //  we don't close fd, leave it to dtor, so we can find leaks easily.
+    if (state_ == kConnecting)
+    {
+        LOG_WARN << "he close in unexpected way";
+    }
+    if (state_ == kConnected || state_ == kDisconnecting) setState(kDisconnected);
     channel_->DisableAll();
 
     TcpConnectionPtr guardThis(shared_from_this());
-    connectionCallback_(guardThis);
     // must be the last line
     closeCallback_(guardThis);
 }

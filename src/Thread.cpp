@@ -21,7 +21,7 @@ void CurrentThread::cache_Tid()
 {
     if (cachedTid == 0)
     {
-        cachedTid = gettid();
+        cachedTid = ::gettid();
         tidLength = snprintf(tidString, sizeof(tidString), "%5d", cachedTid);
     }
 }

@@ -32,7 +32,7 @@ class Acceptor
 
     EventLoop* loop_;
     Socket acceptSocket_;
-    Channel acceptChannel_;
+    Channel* acceptChannel_;
     NewConnectionCallback newConnectionCallback_;
     bool listening_;
     int idleFd_;

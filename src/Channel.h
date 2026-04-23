@@ -28,15 +28,16 @@ class Channel
 
     int fd_() const;
     int index_();
-    void setIndex(int idx) { index = idx; }
-    bool isWriting() { return listen_events & WRITE_EVENT; }
-    bool isReading() { return listen_events & READ_EVENT; }
+    void setIndex(int idx);
+    bool isWriting();
+    bool isReading();
     int listen_events_() const;
     int ready_events_() const;
     bool isNoneEvent() const;
     void set_ready_event(int ev);
     void tie_(const std::shared_ptr<void>&);
 
+    void reset_listen_events();
     void set_read_callback(std::function<void()> callback);
     void set_write_callback(std::function<void()> callback);
     void set_error_callback(std::function<void()> callback);
@@ -52,7 +53,7 @@ class Channel
 
    private:
     int fd;
-    int index;
+    int idx;
     EventLoop* loop;
     int listen_events;
     int ready_events;

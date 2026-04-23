@@ -12,26 +12,54 @@
 #include <vector>
 
 #include "Channel.h"
-#include "Epoller.h"
+#include "CurrentThread.h"
 #include "Logger.h"
+#include "Poller.h"
 #include "TimerQueue.h"
 
 const int PollTimeout = 10000;
+
+__thread EventLoop* loopInThisThread = 0;
+
+EventLoop* loopInThisThread_() { return loopInThisThread; }
 
 int createEventfd()
 {
     int evfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (evfd < 0)
     {
-        // log
+        LOG_ERROR << " wakeup fd create failed !";
         abort();
     }
+    LOG_DEBUG << " evfd=" << evfd;
     return evfd;
 }
 
-EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), callingPendingFunctors(false), wakeup_fd(createEventfd()), thread_id(pthread_self()), epoller(new Epoller(this)), wakeupChannel(new Channel(wakeup_fd, this)), cur_activeCh(NULL) {}
+EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), callingPendingFunctors(false), wakeup_fd(createEventfd()), tid(CurrentThread::tid()), epoller(new Epoller(this)), wakeupChannel(add_channel(wakeup_fd)), cur_activeCh(NULL)
+{
+    LOG_DEBUG << "EventLoop created " << this << " in thread " << tid;
+    if (loopInThisThread)
+    {
+        LOG_FATAL << "Another EventLoop " << loopInThisThread << " exists in this thread " << tid;
+    }
+    else
+    {
+        loopInThisThread = this;
+    }
+    wakeupChannel->set_read_callback([&] { handleRead(); });
+    wakeupChannel->EnableRead();
+}
 
 EventLoop::~EventLoop() {}
+
+bool EventLoop::isInLoopThread() { return tid == CurrentThread::tid(); }
+
+void EventLoop::abortNotInLoopThread() { LOG_FATAL << "EventLoop::abortNotInLoopThread - EventLoop " << this << " was created in tid = " << tid << ", current thread id = " << CurrentThread::tid(); }
+
+void EventLoop::assertInLoopThread()
+{
+    if (!isInLoopThread()) abortNotInLoopThread();
+}
 
 void EventLoop::Loop()
 {
@@ -41,7 +69,9 @@ void EventLoop::Loop()
         MutexLockGuard lock(mutex);
         if (quit == true) return;
     }
+
     looping = true;
+    LOG_DEBUG << " start";
     while (!quit)
     {
         activeChannels.clear();
@@ -49,7 +79,7 @@ void EventLoop::Loop()
 
         eventHandling = true;
 
-        LOG_DEBUG << "Loop handle events";
+        LOG_TRACE << "Loop handle events";
         for (Channel* active_ch : activeChannels)
         {
             cur_activeCh = active_ch;
@@ -59,7 +89,7 @@ void EventLoop::Loop()
         cur_activeCh           = NULL;
         callingPendingFunctors = true;
 
-        LOG_DEBUG << " do pendingFunctors";
+        LOG_TRACE << " do pendingFunctors";
         for (Functor f : pendingFunctors)
         {
             f();
@@ -68,7 +98,7 @@ void EventLoop::Loop()
         callingPendingFunctors = false;
     }
 
-    // log
+    LOG_TRACE << " Loop quit";
     looping = false;
 }
 
@@ -115,24 +145,32 @@ void EventLoop::cancelTimer(Timer* timer_)
 
 void EventLoop::wakeup()
 {
+    LOG_DEBUG << " eventfd=" << wakeup_fd;
     uint64_t byte = 1;
 
-    int n = write(wakeup_fd, &byte, sizeof(byte));
+    int n = sockOption::write(wakeup_fd, &byte, sizeof(byte));
     if (n != sizeof(byte))
     {
-        // log
+        LOG_ERROR << " EventLoop::wakeup failed!";
     }
 }
 
 void EventLoop::handleRead()
 {
+    LOG_DEBUG << " eventfd=" << wakeup_fd;
     uint64_t byte = 1;
 
-    int n = read(wakeup_fd, &byte, sizeof(byte));
+    int n = sockOption::read(wakeup_fd, &byte, sizeof(byte));
     if (n != sizeof(byte))
     {
-        // log
+        LOG_ERROR << " EventLoop::handleRead failed";
     }
+}
+
+Channel* EventLoop::add_channel(int fd)
+{
+    assertInLoopThread();
+    return epoller->add_channel(fd);
 }
 
 void EventLoop::updateChannel(Channel* ch)

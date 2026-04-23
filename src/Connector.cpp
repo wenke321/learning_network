@@ -10,11 +10,11 @@
 
 const int Connector::MaxRetryDelayMs;
 
-Connector::Connector(EventLoop* loop, const InetAddr& serverAddr) : loop_(loop), serverAddr_(serverAddr), connect_(false), state_(Disconnected), retryDelayMs_(InitRetryDelayMs) { LOG_DEBUG << "ctor[" << this << "]"; }
+Connector::Connector(EventLoop* loop, const InetAddr& serverAddr) : loop_(loop), serverAddr_(serverAddr), connect_(false), state_(Disconnected), retryDelayMs_(InitRetryDelayMs) { LOG_TRACE << "ctor[" << this << "]"; }
 
 Connector::~Connector()
 {
-    LOG_DEBUG << "dtor[" << this << "]";
+    LOG_TRACE << "dtor[" << this << "]";
     assert(!channel_);
 }
 
@@ -28,14 +28,14 @@ void Connector::startInLoop()
 {
     loop_->assertInLoopThread();
     assert(state_ == Disconnected);
-    LOG_INFO << "Connector::startInLoop";
+    LOG_TRACE << "Connector::startInLoop";
     if (connect_)
     {
         connect();
     }
     else
     {
-        LOG_DEBUG << "do not connect";
+        // LOG_DEBUG << "do not connect";
     }
 }
 
@@ -63,7 +63,7 @@ void Connector::connect()
 
     int ret        = sockOption::connect(serverfd, serverAddr_.getSockAddr());
     int savedErrno = (ret == 0) ? 0 : errno;
-    LOG_INFO << "Connector::connect";
+    LOG_TRACE << "Connector::connect";
     switch (savedErrno)
     {
         case 0:
@@ -114,12 +114,17 @@ void Connector::connecting(int serverfd)
 {
     // if (!checkConnect(serverfd)) retry(serverfd);
     setState(Connecting);
-    assert(!channel_);
-    channel_.reset(new Channel(serverfd, loop_));
-    channel_->set_write_callback([this] { handleWrite(); });  // FIXME: unsafe
-    channel_->set_error_callback([this] { handleError(); });  // FIXME: unsafe
-
-    channel_->EnableWrite();
+    // assert(!channel_);
+    if (!channel_)
+    {
+        channel_.reset(loop_->add_channel(serverfd));
+        channel_->set_write_callback([this] { handleWrite(); });  // FIXME: unsafe
+        channel_->set_error_callback([this] { handleError(); });  // FIXME: unsafe
+        channel_->EnableWrite();
+    }
+    else
+    {
+    }
 }
 
 int Connector::removeAndResetChannel()
@@ -136,7 +141,7 @@ void Connector::resetChannel() { channel_.reset(); }
 
 void Connector::handleWrite()
 {
-    LOG_DEBUG << " Connector::handleWrite " << state_;
+    LOG_TRACE << " Connector::handleWrite " << state_;
 
     if (state_ == Connecting)
     {
@@ -155,9 +160,9 @@ void Connector::handleWrite()
         }
         else
         {
-            LOG_DEBUG << "connect established";
-            channel_->DisableAll();
+            LOG_TRACE << "connect established";
             setState(Connected);
+            channel_->reset_listen_events();
             if (connect_)
             {
                 newConnectionCallback_(fd);
@@ -178,7 +183,7 @@ void Connector::handleWrite()
 
 void Connector::handleError()
 {
-    LOG_DEBUG << "Connector::handleError state=" << state_;
+    LOG_TRACE << "Connector::handleError state=" << state_;
     if (state_ == Connecting)
     {
         int serverfd = removeAndResetChannel();
@@ -190,7 +195,7 @@ void Connector::handleError()
 
 void Connector::retry(int serverfd)
 {
-    LOG_DEBUG << "retry connect,fd=" << serverfd;
+    LOG_TRACE << "retry connect,fd=" << serverfd;
     sockOption::close(serverfd);
     setState(Disconnected);
     if (connect_)
@@ -201,6 +206,6 @@ void Connector::retry(int serverfd)
     }
     else
     {
-        LOG_DEBUG << "do not connect";
+        // LOG_DEBUG << "do not connect";
     }
 }

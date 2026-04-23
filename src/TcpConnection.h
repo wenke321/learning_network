@@ -1,8 +1,10 @@
 
 #pragma once
+#include <memory>
 #include <string>
 
 #include "Buffer.h"
+#include "Channel.h"
 #include "EventLoop.h"
 #include "InetAddr.h"
 #include "Timestamp.h"
@@ -29,6 +31,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     ///
     /// User should not create this object.
     explicit TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr& localAddr, const InetAddr& peerAddr);
+    explicit TcpConnection(std::unique_ptr<Channel>&, const std::string& name, const InetAddr& localAddr, const InetAddr& peerAddr);
     ~TcpConnection();
 
     EventLoop* getLoop() const { return loop_; }
@@ -123,11 +126,12 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     MessageCallback messageCallback_;
     WriteCompleteCallback writeCompleteCallback_;
     HighWaterMarkCallback highWaterMarkCallback_;
+    //(&connection)
     CloseCallback closeCallback_;
     size_t highWaterMark_;
     Buffer inputBuffer_;
     Buffer outputBuffer_;  // FIXME: use list<Buffer> as output buffer.
-    // boost::any context_;
+
     //  FIXME: creationTime_, lastReceiveTime_
     //         bytesReceived_, bytesSent_
 };

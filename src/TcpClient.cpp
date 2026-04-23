@@ -94,7 +94,7 @@ void TcpClient::stop()
 
 void TcpClient::newConnection(int sockfd)
 {
-    LOG_DEBUG << "TcpClient::newConnection";
+    LOG_TRACE << "TcpClient::newConnection";
     loop_->assertInLoopThread();
     InetAddr peerAddr(sockOption::getPeerAddr(sockfd));
     char buf[32];
@@ -105,7 +105,7 @@ void TcpClient::newConnection(int sockfd)
     InetAddr localAddr(sockOption::getLocalAddr(sockfd));
     // FIXME poll with zero timeout to double confirm the new connection
     // FIXME use make_shared if necessary
-    TcpConnectionPtr conn(new TcpConnection(loop_, connName, sockfd, localAddr, peerAddr));
+    TcpConnectionPtr conn(new TcpConnection(connector_->ch_(), connName, localAddr, peerAddr));
 
     conn->setConnectionCallback(connectionCallback_);
     conn->setMessageCallback(messageCallback_);
@@ -120,7 +120,7 @@ void TcpClient::newConnection(int sockfd)
 
 void TcpClient::removeConnection(const TcpConnectionPtr& conn)
 {
-    LOG_DEBUG << "TcpClient::removeConnection";
+    LOG_TRACE << "TcpClient::removeConnection";
     loop_->assertInLoopThread();
     assert(loop_ == conn->getLoop());
 

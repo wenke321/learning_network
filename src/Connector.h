@@ -22,6 +22,7 @@ class Connector : public std::enable_shared_from_this<Connector>
     void stop();     // can be called in any thread
 
     const InetAddr& serverAddress() const { return serverAddr_; }
+    std::unique_ptr<Channel>& ch_() { return channel_; }
 
    private:
     enum States

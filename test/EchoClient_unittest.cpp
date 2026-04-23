@@ -43,13 +43,14 @@ class EchoClient
             }
             LOG_INFO << "*** connected " << current;
         }
-        conn->send("world\n");
+        // conn->send("world\n");
+        conn->send("quit\n");
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)
     {
         std::string msg(buf->retrieveAllAsString());
-        LOG_TRACE << conn->name() << " recv " << msg.size() << " bytes at " << Timestamp::now().toStr();
+        LOG_DEBUG << conn->name() << " recv " << msg.size() << " bytes :" << " " << msg;
         if (msg == "quit\n")
         {
             conn->send("bye\n");
@@ -59,10 +60,10 @@ class EchoClient
         {
             loop_->quit_();
         }
-        else
-        {
-            conn->send(msg);
-        }
+        // else
+        // {
+        //     conn->send(msg);
+        // }
     }
 
     EventLoop* loop_;
@@ -71,7 +72,7 @@ class EchoClient
 
 int main(int argc, char* argv[])
 {
-    Logger::setLogLevel(Logger::INFO);
+    Logger::setLogLevel(Logger::DEBUG);
     LOG_INFO << "pid = " << getpid() << ", tid = " << CurrentThread::tid();
     if (argc > 1)
     {

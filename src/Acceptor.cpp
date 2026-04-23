@@ -12,34 +12,35 @@
 #include "Logger.h"
 #include "Socket.h"
 
-Acceptor::Acceptor(EventLoop* loop, const InetAddr& listenAddr, bool reuseport) : loop_(loop), acceptSocket_(sockOption::createNonblockingOrDie(listenAddr.family())), acceptChannel_(acceptSocket_.fd_(), loop), listening_(false), idleFd_(::open("/dev/null", O_RDONLY | O_CLOEXEC))
+Acceptor::Acceptor(EventLoop* loop, const InetAddr& listenAddr, bool reuseport) : loop_(loop), acceptSocket_(sockOption::createNonblockingOrDie(listenAddr.family())), listening_(false), idleFd_(::open("/dev/null", O_RDONLY | O_CLOEXEC))
 {
     assert(idleFd_ >= 0);
+    acceptChannel_ = loop->add_channel(acceptSocket_.fd_());
     acceptSocket_.setReuseAddr(true);
     acceptSocket_.setReusePort(reuseport);
     acceptSocket_.bind(listenAddr);
-    acceptChannel_.set_read_callback([this] { handleRead(); });
+    acceptChannel_->set_read_callback([this] { handleRead(); });
 }
 
 Acceptor::~Acceptor()
 {
-    acceptChannel_.DisableAll();
-    acceptChannel_.remove();
+    acceptChannel_->DisableAll();
+    acceptChannel_->remove();
     ::close(idleFd_);
 }
 
 void Acceptor::listen()
 {
-    LOG_DEBUG << " Acceptor::listen";
+    LOG_TRACE << " Acceptor::listen";
     loop_->assertInLoopThread();
     listening_ = true;
     acceptSocket_.listen();
-    acceptChannel_.EnableRead();
+    acceptChannel_->EnableRead();
 }
 
 void Acceptor::handleRead()
 {
-    LOG_DEBUG << "Acceptor::handleRead";
+    LOG_TRACE << "Acceptor::handleRead";
     loop_->assertInLoopThread();
     InetAddr peerAddr;
 
@@ -48,10 +49,10 @@ void Acceptor::handleRead()
         int connfd = acceptSocket_.accept(&peerAddr);
         if (connfd >= 0)
         {
-            LOG_DEBUG << "new connection come";
+            LOG_TRACE << "new connection come";
             if (newConnectionCallback_)
             {
-                LOG_DEBUG << "newConnectionCallback_";
+                LOG_TRACE << "newConnectionCallback_";
                 newConnectionCallback_(connfd, peerAddr);
             }
             else

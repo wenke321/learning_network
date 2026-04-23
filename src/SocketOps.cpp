@@ -39,7 +39,7 @@ int sockOption::createNonblockingOrDie(sa_family_t family)
 int sockOption::connect(int sockfd, const struct sockaddr* addr) { return ::connect(sockfd, addr, static_cast<socklen_t>(sizeof(struct sockaddr_in))); }
 void sockOption::bindOrDie(int sockfd, const struct sockaddr* addr)
 {
-    LOG_DEBUG << "sockOption::bindOrDie";
+    LOG_TRACE << "sockOption::bindOrDie";
     int ret = bind(sockfd, addr, static_cast<socklen_t>(sizeof(struct sockaddr_in6)));
     if (ret < 0)
     {
@@ -57,7 +57,7 @@ void sockOption::listenOrDie(int sockfd)
 
 int sockOption::accept(int sockfd, struct sockaddr_in* addr)
 {
-    LOG_DEBUG << "Socket::accept";
+    LOG_TRACE << "Socket::accept";
     socklen_t addrlen = static_cast<socklen_t>(sizeof(sockaddr_in));
     return ::accept4(sockfd, sockaddr_cast(addr), &addrlen, SOCK_CLOEXEC | SOCK_NONBLOCK);
 
@@ -100,7 +100,7 @@ void sockOption::close(int sockfd)
 {
     if (::close(sockfd) < 0)
     {
-        LOG_TRACE << "socket close,fd=" << sockfd;
+        LOG_ERROR << "socket close,fd=" << sockfd;
     }
 }
 
@@ -108,7 +108,7 @@ void sockOption::shutdownWrite(int sockfd)
 {
     if (::shutdown(sockfd, SHUT_WR) < 0)
     {
-        LOG_TRACE << "shutdown,fd=" << sockfd;
+        LOG_ERROR << "SHUT_WR,fd=" << sockfd;
     }
 }
 
@@ -228,7 +228,7 @@ void sockOption::setTcpNoDelay(bool on, int sockfd)
 
 void sockOption::setReuseAddr(bool on, int sockfd)
 {
-    LOG_DEBUG << "::setsockopt(SO_REUSEADDR)";
+    LOG_TRACE << "::setsockopt(SO_REUSEADDR)";
     int opVal = on ? 1 : 0;
     if (::setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opVal, sizeof(opVal)) < 0)
     {
@@ -237,7 +237,7 @@ void sockOption::setReuseAddr(bool on, int sockfd)
 }
 void sockOption::setReusePort(bool on, int sockfd)
 {
-    LOG_DEBUG << "::setsockopt(SO_REUSEPORT),errno=";
+    LOG_TRACE << "::setsockopt(SO_REUSEPORT),errno=";
     int opVal = on ? 1 : 0;
     if (::setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &opVal, sizeof(opVal)) < 0)
     {

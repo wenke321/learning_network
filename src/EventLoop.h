@@ -10,12 +10,12 @@
 
 #include "Acceptor.h"
 #include "CountDownLatch.h"
+#include "Poller.h"
 #include "Timer.h"
 #include "Timestamp.h"
 
 class Channel;
 class TimerQueue;
-class Epoller;
 
 class EventLoop
 {
@@ -37,16 +37,14 @@ class EventLoop
     void runEvery(triggerTime_t triggerTime_, TimerCallback cb, double repeatCircle_);
 
     void wakeup();
+    Channel* add_channel(int fd);
     void updateChannel(Channel* ch);
     void removeChannel(Channel* ch);
     bool hasChannal(Channel* ch);
 
-    bool isInLoopThread() { return pthread_equal(pthread_self(), thread_id); }
-    void abortNotInLoopThread() { abort(); }
-    void assertInLoopThread()
-    {
-        if (!isInLoopThread()) abortNotInLoopThread();
-    }
+    bool isInLoopThread();
+    void abortNotInLoopThread();
+    void assertInLoopThread();
 
    private:
     void handleRead();  // wakeup
@@ -57,8 +55,8 @@ class EventLoop
     bool eventHandling;
     bool callingPendingFunctors;
     int wakeup_fd;
-    const pthread_t thread_id;
-    std::unique_ptr<Epoller> epoller;
+    const pid_t tid;
+    std::unique_ptr<Poller> epoller;
     std::unique_ptr<Channel> wakeupChannel;
     std::vector<Channel*> activeChannels;
     Channel* cur_activeCh;
