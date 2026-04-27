@@ -11,7 +11,14 @@
 #define InitEventNum 1000
 
 Poller::Poller(EventLoop* loop_) : owner_loop(loop_) {}
-Poller::~Poller() {}
+Poller::~Poller()
+{
+    for (auto it : m_channels)
+    {
+        // it.second->DisableAll();
+        delete it.second;
+    }
+}
 
 bool Poller::hasChannal(Channel* ch)
 {
@@ -23,6 +30,7 @@ bool Poller::hasChannal(Channel* ch)
 Channel* Poller::add_channel(int fd)
 {
     LOG_DEBUG << " fd=" << fd;
+    MutexLockGuard lock(mutex);
     if (m_channels.find(fd) == m_channels.end())
     {
         m_channels[fd] = new Channel(fd, owner_loop);
@@ -43,6 +51,8 @@ void Poller::removeChannel(Channel* ch)
 
     int fd = ch->fd_();
     assert(m_channels.find(fd) != m_channels.end());
+
+    delete ch;
 
     m_channels.erase(fd);
 }
@@ -104,11 +114,22 @@ void Epoller::updateChannel(Channel* ch)
     const int idx = ch->index_();
     if (idx & Channel::ch_deleted)
     {
-        LOG_DEBUG << " idx=Channel::ch_deleted";
+        // LOG_DEBUG << " idx=Channel::ch_deleted";
         int fd = ch->fd_();
 
         assert(m_channels.find(fd) != m_channels.end());
         assert(m_channels[fd] == ch);
+
+        ch->setIndex(Channel::ch_added);
+        update(EPOLL_CTL_ADD, ch);
+    }
+    else if (idx & Channel::ch_extern)
+    {
+        LOG_DEBUG << " extern Channel";
+        int fd = ch->fd_();
+
+        assert(m_channels.find(fd) == m_channels.end());
+        m_channels[fd] = ch;
 
         ch->setIndex(Channel::ch_added);
         update(EPOLL_CTL_ADD, ch);

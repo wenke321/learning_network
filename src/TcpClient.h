@@ -49,7 +49,7 @@ class TcpClient
     /// Not thread safe, but in loop
     void newConnection(int sockfd);
     /// Not thread safe, but in loop
-    void removeConnection(const TcpConnectionPtr& conn);
+    void removeConnection(TcpConnectionPtr conn);
 
     EventLoop* loop_;
     ConnectorPtr connector_;  // avoid revealing Connector

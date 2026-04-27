@@ -5,99 +5,111 @@
 #include <unistd.h>
 
 #include <cstring>
+#include <ctime>
 #include <memory>
 
+#include "Logger.h"
 #include "Timer.h"
 #include "Timestamp.h"
 
 int createTimerfd()
 {
-    int timer_fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    int timer_fd = ::timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK | TFD_CLOEXEC);
     if (timer_fd < 0)
     {
-        // log err
+        LOG_ERROR << " ::timerfd_create failed !";
     }
     return timer_fd;
 }
 
 void periodFromNow(struct itimerspec& newtime_, triggerTime_t& triggerTime_)
 {
-    triggerTime_t period = triggerTime_ - Timestamp::now_microsecconds();
+    triggerTime_t t = Timestamp::now_microsecconds();
+    LOG_DEBUG << " now_microsecconds=" << t;
+    LOG_DEBUG << " triggerTime=" << triggerTime_;
+    triggerTime_t period = 0;
+    if (triggerTime_ > t) period = triggerTime_ - t;
     if (period < 100) period = 100;
+    LOG_DEBUG << " period=" << period;
     newtime_.it_value.tv_sec  = period / 1000000;
     newtime_.it_value.tv_nsec = period % 1000000 * 1000;
+    LOG_DEBUG << " periodFromNow=" << newtime_.it_value.tv_sec << " seconds";
 }
 
-TimerQueue::TimerQueue(EventLoop* loop_) : own_loop(loop_), timerfd(createTimerfd()), timerChannel(timerfd, own_loop)
+TimerQueue::TimerQueue(EventLoop* loop_) : own_loop(loop_), timerfd(createTimerfd())
 {
-    timerChannel.set_read_callback([this] { handleRead(); });
-    timerChannel.EnableRead();
+    timerChannel = loop_->add_channel(timerfd);
+    timerChannel->set_read_callback([this] { handleRead(); });
+    timerChannel->EnableRead();
 }
 
 // Timer* should be managed by who create them
-TimerQueue::~TimerQueue()
-{
-    timerChannel.DisableAll();
-    timerChannel.remove();
-    ::close(timerfd);
-}
+TimerQueue::~TimerQueue() {}
 
-void TimerQueue::addTimer(triggerTime_t triggerTime_, TimerCallback cb, double repeatCircle_)
+void TimerQueue::addTimer(triggerTime_t _triggerTime, TimerCallback _cb, double _repeatCircle)
 {
+    LOG_DEBUG << " ";
     own_loop->assertInLoopThread();
-    Timer* timer = new Timer(triggerTime_, cb, repeatCircle_);
-    own_loop->runInLoop([this, &timer] { addTimerInLoop(timer, 0); });
+    Timer* timer = new Timer(_triggerTime, _cb, _repeatCircle);
+    own_loop->runInLoop([&] { addTimerInLoop(timer, 0); });
 }
 
-void TimerQueue::addTimer(Timer* timer_)
+void TimerQueue::addTimer(Timer* _timer)
 {
+    LOG_DEBUG << " ";
     own_loop->assertInLoopThread();
 
-    own_loop->runInLoop([this, &timer_] { addTimerInLoop(timer_, 0); });
+    own_loop->runInLoop([&] { addTimerInLoop(_timer, 0); });
 }
 
-void TimerQueue::cancelTimer(Timer* timer_, bool noOwner)
+void TimerQueue::cancelTimer(Timer* _timer, bool _noOwner)
 {
+    LOG_DEBUG << " ";
     own_loop->assertInLoopThread();
 
-    own_loop->runInLoop([this, &timer_, &noOwner] { cancelTimerInLoop(timer_, noOwner); });
+    own_loop->runInLoop([&] { cancelTimerInLoop(_timer, _noOwner); });
 }
 
-void TimerQueue::addTimerInLoop(Timer* timer_, bool noOwner)
+void TimerQueue::addTimerInLoop(Timer* _timer, bool _noOwner)
 {
+    LOG_DEBUG << " ";
     own_loop->assertInLoopThread();
 
     // update timerfd
-    if (insert(timer_, noOwner))
+    if (insert(_timer, _noOwner))
     {
-        //
-        updateFd(timer_->TriggerTime());
+        updateFd(_timer->TriggerTime());
     }
 }
 
 void TimerQueue::cancelTimerInLoop(Timer* timer_, bool noOwner)
 {
+    LOG_DEBUG << " ";
     own_loop->assertInLoopThread();
-    if (activeTimers.find(timer_->TriggerTime()) != activeTimers.end())
+    triggerTime_t t = timer_->TriggerTime();
+    if (activeTimers.find(t) != activeTimers.end())
     {
-        activeTimers[timer_->TriggerTime()].erase(timer_);
+        activeTimers[t].erase(timer_);
         if (noOwner) delete timer_;
+        if (activeTimers[t].empty()) activeTimers.erase(t);
     }
     else
     {
-        // log illegal
+        LOG_ERROR << " ";
     }
 }
 
 void TimerQueue::handleRead()
 {
+    LOG_DEBUG << " ";
     own_loop->assertInLoopThread();
 
     triggeredTimers.clear();
     triggerTime_t now = Timestamp::now_microsecconds();
     for (; activeTimers.begin()->first <= now;)
     {
-        for (auto it : activeTimers.begin()->second)
+        sameTime_timers_t ts = activeTimers.begin()->second;
+        for (auto it : ts)
         {
             it.first->run();
             if (it.first->shouldRepeat())
@@ -108,19 +120,26 @@ void TimerQueue::handleRead()
             if (it.second) delete it.first;
         }
         activeTimers.erase(activeTimers.begin());
+        if (activeTimers.empty())
+        {
+            activeTimers.clear();
+            break;
+        }
     }
     reset(now);
 }
 
 bool TimerQueue::insert(Timer* timer_, bool noOwner)
 {
+    LOG_DEBUG << " ";
     triggerTime_t triggerTime_ = timer_->TriggerTime();
     if (activeTimers.find(triggerTime_) != activeTimers.end())
     {
+        LOG_DEBUG << " old triggerTime";
         sameTime_timers_t sameTime_timers = activeTimers[triggerTime_];
         if (sameTime_timers.find(timer_) != sameTime_timers.end())
         {
-            // log illegal
+            LOG_ERROR << " ";
         }
         else
         {
@@ -131,6 +150,7 @@ bool TimerQueue::insert(Timer* timer_, bool noOwner)
     }
     else
     {
+        LOG_DEBUG << " new triggerTime";
         activeTimers[timer_->TriggerTime()][timer_] = noOwner;
         // log success
         return activeTimers.begin()->first >= triggerTime_;
@@ -139,25 +159,26 @@ bool TimerQueue::insert(Timer* timer_, bool noOwner)
 
 void TimerQueue::reset(triggerTime_t now)
 {
-    triggerTime_t earliest;
+    LOG_DEBUG << " ";
+    triggerTime_t earliest = 0xffffffffffffffff;
     for (Timer* it : triggeredTimers)
     {
         it->reset(now);
         addTimer(it);
-        earliest = std::max(earliest, it->TriggerTime());
+        earliest = std::min(earliest, it->TriggerTime());
     }
-    updateFd(earliest);
+    if (earliest != 0) updateFd(earliest);
 }
 
-void TimerQueue::updateFd(triggerTime_t triggerTime_)
+void TimerQueue::updateFd(triggerTime_t _triggerTime)
 {
+    LOG_DEBUG << " _triggerTime=" << _triggerTime;
     struct itimerspec newtime, oldtime;
     memset(&newtime, 0, sizeof(newtime));
     memset(&oldtime, 0, sizeof(oldtime));
-    periodFromNow(newtime, triggerTime_);
+    periodFromNow(newtime, _triggerTime);
     if (::timerfd_settime(timerfd, 0, &newtime, &oldtime) < 0)
     {
-        //
-        // log timerfd_settime err
+        LOG_ERROR << "::timerfd_settime";
     }
 }

@@ -22,7 +22,7 @@ class Connector : public std::enable_shared_from_this<Connector>
     void stop();     // can be called in any thread
 
     const InetAddr& serverAddress() const { return serverAddr_; }
-    std::unique_ptr<Channel>& ch_() { return channel_; }
+    Channel*& ch_() { return channel_; }
 
    private:
     enum States
@@ -50,7 +50,7 @@ class Connector : public std::enable_shared_from_this<Connector>
     InetAddr serverAddr_;
     bool connect_;  // atomic
     States state_;  // FIXME: use atomic variable
-    std::unique_ptr<Channel> channel_;
+    Channel* channel_;
     NewConnectionCallback newConnectionCallback_;
     int retryDelayMs_;
 };

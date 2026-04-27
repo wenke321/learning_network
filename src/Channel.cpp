@@ -12,29 +12,29 @@
 
 #include "EventLoop.h"
 #include "Logger.h"
-#include "Timestamp.h"
 
 const int Channel::READ_EVENT  = EPOLLIN | EPOLLPRI;
 const int Channel::WRITE_EVENT = EPOLLOUT;
 const int Channel::NONE_EVENT  = 0;
 
-const int Channel::ch_new     = 1;
+const int Channel::ch_extern  = 1;
 const int Channel::ch_added   = 2;
 const int Channel::ch_deleted = 4;
 
-Channel::Channel(int fd_, EventLoop* loop_) : fd(fd_), idx(ch_new), loop(loop_), listen_events(0), ready_events(0), addedToLoop(false), eventHandling(false), tied(false) {}
+Channel::Channel(int fd_, EventLoop* loop_) : fd(fd_), idx(ch_deleted), loop(loop_), listen_events(0), ready_events(0), addedToLoop(false), eventHandling(false), tied(false) {}
 
 Channel::~Channel()
 {
     assert(!eventHandling);
     assert(!addedToLoop);
-    if (loop->isInLoopThread()) assert(!loop->hasChannal(this));
+    loop->assertInLoopThread();
+    ::close(fd);
 }
 
 EventLoop* Channel::owner_loop() { return loop; }
 void Channel::setIndex(int _idx) { idx = _idx; }
-bool Channel::isWriting() { return listen_events & WRITE_EVENT; }
-bool Channel::isReading() { return listen_events & READ_EVENT; }
+bool Channel::isWriting() { return ready_events & WRITE_EVENT; }
+bool Channel::isReading() { return ready_events & READ_EVENT; }
 
 void Channel::HandleEvent()
 {
@@ -114,7 +114,7 @@ void Channel::HandleEvent_tied()
 
 void Channel::EnableRead()
 {
-    LOG_TRACE << " fd=" << fd;
+    LOG_DEBUG << " fd=" << fd;
     listen_events |= READ_EVENT;
     loop->updateChannel(this);
 }
@@ -142,7 +142,7 @@ void Channel::DisableWrite()
 
 void Channel::DisableAll()
 {
-    LOG_DEBUG << " fd=" << fd;
+    // LOG_DEBUG << " cur tid=" << CurrentThread::tid() << " fd=" << fd;
     listen_events = 0;
     loop->updateChannel(this);
 }

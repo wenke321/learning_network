@@ -21,7 +21,7 @@ void EventloopThreadPool::start(const ThreadInitCallback& cb_)
     for (int i = 0; i < threadNum; i++)
     {
         snprintf(buf + threadName.size(), sizeof(buf) - threadName.size(), "%d", i);
-        threads.push_back(std::make_unique<EventloopThread>(cb_, threadName + buf));
+        threads.push_back(std::make_unique<EventloopThread>(threadName + buf, cb_));
         loops.push_back(threads[i]->startLoop());
     }
     if (threadNum == 0 && cb_)
@@ -30,6 +30,8 @@ void EventloopThreadPool::start(const ThreadInitCallback& cb_)
     }
     started = true;
 }
+
+std::vector<EventLoop*>& EventloopThreadPool::get_loops() { return loops; }
 
 EventLoop* EventloopThreadPool::getNextLoop()
 {

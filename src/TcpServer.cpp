@@ -2,17 +2,22 @@
 #include "TcpServer.h"
 
 #include <cassert>
+#include <csignal>
 #include <memory>
 
 #include "Acceptor.h"
+#include "Channel.h"
 #include "EventLoop.h"
 #include "InetAddr.h"
 #include "Logger.h"
+#include "SignalHandler.h"
 #include "TcpConnection.h"
 
-TcpServer::TcpServer(EventLoop* loop, const InetAddr& listenAddr, const std::string& nameArg, Option option) : loop_(loop), ipPort_(listenAddr.ipPortStr()), name_(nameArg), acceptor_(new Acceptor(loop, listenAddr, option == ReusePort)), threadPool_(new EventloopThreadPool(loop, name_)), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), nextConnId_(1)
+TcpServer::TcpServer(EventLoop* loop, const InetAddr& listenAddr, const std::string& nameArg, Option option) : loop_(loop), ipPort_(listenAddr.ipPortStr()), name_(nameArg), acceptor_(new Acceptor(loop, listenAddr, option == ReusePort)), threadPool_(new EventloopThreadPool(loop, name_)), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), nextConnId_(1), signal_handler()
 {
-    acceptor_->setNewConnectionCallback([this](int sockfd, const InetAddr& peerAddr_) { newConnection(sockfd, peerAddr_); });
+    acceptor_->setNewConnectionCallback([=](int sockfd, const InetAddr& peerAddr_) { newConnection(sockfd, peerAddr_); });
+
+    signal_handler.init(loop, [&] { handle_signal(); });
 }
 
 TcpServer::~TcpServer()
@@ -40,6 +45,14 @@ void TcpServer::start()
     {
         threadPool_->start(threadInitCallback_);
 
+        Channel* ch = signal_handler.get_ch();
+        for (auto l : threadPool_->get_loops())
+        {
+            // l->runInLoop([&] { l->add_channel(ch); });
+            ch->setIndex(Channel::ch_extern);
+            l->add_channel(ch);
+        }
+
         assert(!acceptor_->listening());
         loop_->runInLoop([this] { acceptor_->listen(); });
     }
@@ -59,22 +72,22 @@ void TcpServer::newConnection(int sockfd, InetAddr peerAddr)
     InetAddr localAddr(sockOption::getLocalAddr(sockfd));
     // FIXME poll with zero timeout to double confirm the new connection
     // FIXME use make_shared if necessary
-    TcpConnectionPtr conn(new TcpConnection(ioLoop, connName, sockfd, localAddr, peerAddr));
+    TcpConnectionPtr conn  = std::make_shared<TcpConnection>(ioLoop, connName, sockfd, localAddr, peerAddr);
     connections_[connName] = conn;
     conn->setConnectionCallback(connectionCallback_);
     conn->setMessageCallback(messageCallback_);
     conn->setWriteCompleteCallback(writeCompleteCallback_);
-    conn->setCloseCallback([this](const std::shared_ptr<TcpConnection>& conn) { removeConnection(conn); });  // FIXME: unsafe
+    conn->setCloseCallback([this](TcpConnectionPtr conn) { removeConnection(conn); });  // FIXME: unsafe
     ioLoop->runInLoop([conn_ = conn] { conn_->connectEstablished(); });
 }
 
-void TcpServer::removeConnection(const TcpConnectionPtr& conn)
+void TcpServer::removeConnection(TcpConnectionPtr conn)
 {
     // FIXME: unsafe
     loop_->runInLoop([this, conn_ = conn] { removeConnectionInLoop(conn_); });
 }
 
-void TcpServer::removeConnectionInLoop(const TcpConnectionPtr& conn)
+void TcpServer::removeConnectionInLoop(TcpConnectionPtr conn)
 {
     loop_->assertInLoopThread();
     LOG_INFO << "TcpServer::removeConnectionInLoop [" << name_ << "] - connection " << conn->name();
@@ -82,5 +95,19 @@ void TcpServer::removeConnectionInLoop(const TcpConnectionPtr& conn)
     (void)n;
     assert(n == 1);
     EventLoop* ioLoop = conn->getLoop();
-    ioLoop->queueInLoop([conn_ = conn] { conn_->connectDestroyed(); });
+    ioLoop->runInLoop([conn_ = conn] { conn_->connectDestroyed(); });
+}
+
+void TcpServer::handle_signal()
+{
+    LOG_DEBUG << " ";
+    acceptor_->stop();
+    for (auto conn : connections_)
+    {
+        conn.second->shutdown();
+        removeConnection(conn.second);
+    }
+
+    for (auto l : threadPool_->get_loops()) l->quit_();
+    loop_->quit_();
 }

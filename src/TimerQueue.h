@@ -1,5 +1,6 @@
 #pragma once
 #include <map>
+#include <memory>
 #include <unordered_set>
 
 #include "Channel.h"
@@ -26,7 +27,7 @@ class TimerQueue
 
     EventLoop* own_loop;
     int timerfd;
-    Channel timerChannel;
+    Channel* timerChannel;
     std::vector<Timer*> triggeredTimers;
     std::map<triggerTime_t, sameTime_timers_t> activeTimers;
 };

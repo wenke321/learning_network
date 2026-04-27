@@ -3,11 +3,10 @@
 #include <functional>
 #include <memory>
 
-#include "Timer.h"
-#include "Timestamp.h"
-
 class EventLoop;
 
+// when want to add a channel to loop,always use loop->add_channel(fd),
+// it will create a channel and return to you,then enable read...
 class Channel
 {
    public:
@@ -47,7 +46,7 @@ class Channel
     static const int WRITE_EVENT;
     static const int NONE_EVENT;
 
-    static const int ch_new;
+    static const int ch_extern;
     static const int ch_added;
     static const int ch_deleted;
 

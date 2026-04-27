@@ -1,8 +1,12 @@
+#pragma once
 #include <fcntl.h>
 #include <pthread.h>
+#include <sched.h>
 
 #include <cassert>
 #include <cstddef>
+
+#include "CurrentThread.h"
 #define MCHECK(ret)                   \
     ({                                \
         __typeof__(ret) errnum = ret; \
@@ -22,7 +26,7 @@ class MutexLock
         pthread_mutex_destroy(&mutex);
     }
 
-    bool isLockedByThisThread() { return holder == pthread_self(); }
+    bool isLockedByThisThread() { return holder == CurrentThread::tid(); }
 
     void lock()
     {
@@ -51,10 +55,10 @@ class MutexLock
         MutexLock& owner;
     };
 
-    void assignHolder() { holder = pthread_self(); }
+    void assignHolder() { holder = CurrentThread::tid(); }
     void unassignHolder() { holder = 0; }
 
-    pthread_t holder;
+    pid_t holder;
     pthread_mutex_t mutex;
 };
 

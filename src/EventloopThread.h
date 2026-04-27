@@ -8,7 +8,7 @@ typedef std::function<void(EventLoop*)> ThreadInitCallback;
 class EventloopThread
 {
    public:
-    EventloopThread(ThreadInitCallback cb, const std::string& name);
+    EventloopThread(const std::string&, ThreadInitCallback);
     ~EventloopThread();
 
     EventLoop* startLoop();

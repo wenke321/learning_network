@@ -68,7 +68,7 @@ void Connector::connect()
     {
         case 0:
         case EINPROGRESS:
-            LOG_INFO << "EINPROGRESS,may succeed";
+            // LOG_INFO << "EINPROGRESS,may succeed";
         case EINTR:
         case EISCONN:
             connecting(serverfd);
@@ -117,7 +117,7 @@ void Connector::connecting(int serverfd)
     // assert(!channel_);
     if (!channel_)
     {
-        channel_.reset(loop_->add_channel(serverfd));
+        channel_ = loop_->add_channel(serverfd);
         channel_->set_write_callback([this] { handleWrite(); });  // FIXME: unsafe
         channel_->set_error_callback([this] { handleError(); });  // FIXME: unsafe
         channel_->EnableWrite();
@@ -129,15 +129,15 @@ void Connector::connecting(int serverfd)
 
 int Connector::removeAndResetChannel()
 {
+    LOG_DEBUG << " ";
     channel_->DisableAll();
-    channel_->remove();
     int serverfd = channel_->fd_();
     // Can't reset channel_ here, because we are inside Channel::handleEvent
-    loop_->queueInLoop([this] { resetChannel(); });  // FIXME: unsafe
+    loop_->removeChannel(channel_);  // FIXME: unsafe
     return serverfd;
 }
 
-void Connector::resetChannel() { channel_.reset(); }
+void Connector::resetChannel() { channel_ = nullptr; }
 
 void Connector::handleWrite()
 {
@@ -183,7 +183,7 @@ void Connector::handleWrite()
 
 void Connector::handleError()
 {
-    LOG_TRACE << "Connector::handleError state=" << state_;
+    LOG_DEBUG << "Connector::handleError state=" << state_;
     if (state_ == Connecting)
     {
         int serverfd = removeAndResetChannel();

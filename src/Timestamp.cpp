@@ -30,15 +30,15 @@ std::string Timestamp::toStrYMD()
 
 Timestamp Timestamp::now()
 {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    uint64_t second = tv.tv_sec;
-    return Timestamp(second * 1000000 + tv.tv_usec);
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    uint64_t second = ts.tv_sec;
+    return Timestamp(second * 1000000 + ts.tv_nsec / 1000);
 }
 
 uint64_t Timestamp::now_microsecconds()
 {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return tv.tv_sec * 1000000 + tv.tv_usec;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }

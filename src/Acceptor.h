@@ -20,6 +20,7 @@ class Acceptor
     void setNewConnectionCallback(const NewConnectionCallback& cb) { newConnectionCallback_ = cb; }
 
     void listen();
+    void stop();
 
     bool listening() const { return listening_; }
 

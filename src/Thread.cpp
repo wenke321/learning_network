@@ -12,9 +12,6 @@
 #include <cstdio>
 #include <string>
 
-#include "CountDownLatch.h"
-#include "CurrentThread.h"
-
 pid_t gettid() { return static_cast<pid_t>(::syscall(SYS_gettid)); }
 
 void CurrentThread::cache_Tid()

@@ -46,7 +46,8 @@ set(SOURCES
 )
 
 # 构建静态库
-add_library(network_lib STATIC ${SOURCES})
+add_library(network_lib STATIC ${SOURCES}
+    src/SignalHandler.cpp)
 
 # 公开头文件路径（src 目录），同时要求库的使用者链接 pthread 和 rt
 target_include_directories(network_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

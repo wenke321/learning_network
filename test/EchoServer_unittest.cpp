@@ -1,5 +1,8 @@
+#include <bits/types/sigset_t.h>
+
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <thread>
 
@@ -15,6 +18,7 @@ std::atomic<int> g_request_count{0};
 #include "../src/TcpServer.h"
 #include "AsyncLogger.h"
 #include "CurrentThread.h"
+#include "SignalHandler.h"
 
 int numThreads = 0;
 
@@ -23,8 +27,8 @@ class EchoServer
    public:
     EchoServer(EventLoop* loop, const InetAddr& listenAddr) : loop_(loop), server_(loop, listenAddr, "EchoServer")
     {
-        server_.setConnectionCallback([this](const TcpConnectionPtr& conn) { onConnection(conn); });
-        server_.setMessageCallback([this](const TcpConnectionPtr& conn, Buffer* buf) { onMessage(conn, buf); });
+        server_.setConnectionCallback([this](TcpConnectionPtr conn) { onConnection(conn); });
+        server_.setMessageCallback([this](TcpConnectionPtr conn, Buffer* buf) { onMessage(conn, buf); });
         server_.setThreadNum(numThreads);
     }
 
@@ -35,7 +39,7 @@ class EchoServer
     void onConnection(const TcpConnectionPtr& conn)
     {
         LOG_TRACE << conn->peerAddress().ipPortStr() << " -> " << conn->localAddress().ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
-        LOG_INFO << conn->getTcpInfoString();
+        // LOG_INFO << conn->getTcpInfoString();
 
         g_request_count++;
         conn->send("hello\n");
@@ -54,6 +58,7 @@ class EchoServer
         {
             loop_->quit_();
         }
+        // if (msg == "world\n") conn->send("quit\n");
 
         // conn->send(msg);
     }
@@ -62,7 +67,7 @@ class EchoServer
     TcpServer server_;
 };
 
-AsyncLogger asyncLog("Server ", 32, 3);
+AsyncLogger asyncLog("Server", 1024, 5);
 
 void logoutput(const char* logs, int len) { asyncLog.append(logs, len); }
 

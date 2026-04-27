@@ -19,6 +19,7 @@ Acceptor::Acceptor(EventLoop* loop, const InetAddr& listenAddr, bool reuseport) 
     acceptSocket_.setReuseAddr(true);
     acceptSocket_.setReusePort(reuseport);
     acceptSocket_.bind(listenAddr);
+    acceptSocket_.listen();
     acceptChannel_->set_read_callback([this] { handleRead(); });
 }
 
@@ -34,8 +35,18 @@ void Acceptor::listen()
     LOG_TRACE << " Acceptor::listen";
     loop_->assertInLoopThread();
     listening_ = true;
-    acceptSocket_.listen();
     acceptChannel_->EnableRead();
+}
+
+void Acceptor::stop()
+{
+    LOG_DEBUG << " ";
+    loop_->runInLoop(
+        [&]
+        {
+            acceptChannel_->DisableRead();
+            listening_ = false;
+        });
 }
 
 void Acceptor::handleRead()

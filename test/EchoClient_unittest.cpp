@@ -2,14 +2,12 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include <utility>
-
+#include "AsyncLogger.h"
 #include "CurrentThread.h"
 #include "EventLoop.h"
 #include "InetAddr.h"
 #include "Logger.h"
 #include "TcpClient.h"
-#include "Timestamp.h"
 
 int numThreads = 0;
 class EchoClient;
@@ -43,8 +41,7 @@ class EchoClient
             }
             LOG_INFO << "*** connected " << current;
         }
-        // conn->send("world\n");
-        conn->send("quit\n");
+        conn->send("world\n");
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)
@@ -60,19 +57,25 @@ class EchoClient
         {
             loop_->quit_();
         }
-        // else
-        // {
-        //     conn->send(msg);
-        // }
+        else
+        {
+            conn->send(msg);
+        }
     }
 
     EventLoop* loop_;
     TcpClient client_;
 };
 
+AsyncLogger asyncLog("Client", 1024, 5);
+
+void logoutput(const char* logs, int len) { asyncLog.append(logs, len); }
+
 int main(int argc, char* argv[])
 {
     Logger::setLogLevel(Logger::DEBUG);
+    // asyncLog.start();
+    // Logger::setOutput(logoutput);
     LOG_INFO << "pid = " << getpid() << ", tid = " << CurrentThread::tid();
     if (argc > 1)
     {

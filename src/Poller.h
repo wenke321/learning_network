@@ -5,7 +5,11 @@
 #include <vector>
 
 #include "Channel.h"
+#include "Mutex.h"
 #include "Timestamp.h"
+
+
+class EventLoop;
 
 class Poller
 {
@@ -27,6 +31,7 @@ class Poller
 
    private:
     EventLoop* owner_loop;
+    MutexLock mutex;
 };
 
 class Epoller : public Poller

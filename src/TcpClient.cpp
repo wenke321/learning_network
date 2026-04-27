@@ -110,7 +110,7 @@ void TcpClient::newConnection(int sockfd)
     conn->setConnectionCallback(connectionCallback_);
     conn->setMessageCallback(messageCallback_);
     conn->setWriteCompleteCallback(writeCompleteCallback_);
-    conn->setCloseCallback([this](const TcpConnectionPtr& conn) { removeConnection(conn); });  // FIXME: unsafe
+    conn->setCloseCallback([this](TcpConnectionPtr conn) { removeConnection(conn); });  // FIXME: unsafe
     {
         MutexLockGuard lock(mutex_);
         connection_ = conn;
@@ -118,7 +118,7 @@ void TcpClient::newConnection(int sockfd)
     conn->connectEstablished();
 }
 
-void TcpClient::removeConnection(const TcpConnectionPtr& conn)
+void TcpClient::removeConnection(TcpConnectionPtr conn)
 {
     LOG_TRACE << "TcpClient::removeConnection";
     loop_->assertInLoopThread();
@@ -126,11 +126,11 @@ void TcpClient::removeConnection(const TcpConnectionPtr& conn)
 
     {
         MutexLockGuard lock(mutex_);
-        assert(connection_ == conn);
+        if (connection_) assert(connection_ == conn);
         connection_.reset();
     }
 
-    loop_->queueInLoop(std::bind(&TcpConnection::connectDestroyed, conn));
+    loop_->queueInLoop([conn_ = conn] { conn_->connectDestroyed(); });
     if (retry_ && connect_)
     {
         LOG_INFO << "TcpClient::connect[" << name_ << "] - Reconnecting to " << connector_->serverAddress().ipPortStr();

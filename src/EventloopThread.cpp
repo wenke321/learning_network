@@ -7,7 +7,9 @@
 #include "EventLoop.h"
 #include "Thread.h"
 
-EventloopThread::EventloopThread(ThreadInitCallback cb_, const std::string& name_) : loop(nullptr), exiting(false), thread([this]() { threadFunc(); }, name_), cond(mutex), cb(cb_) {}
+void default_cb(EventLoop* l) {}
+
+EventloopThread::EventloopThread(const std::string& name_, ThreadInitCallback cb_ = default_cb) : loop(nullptr), exiting(false), thread([this]() { threadFunc(); }, name_), cond(mutex), cb(cb_) {}
 
 EventloopThread::~EventloopThread()
 {

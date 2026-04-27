@@ -31,7 +31,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     ///
     /// User should not create this object.
     explicit TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr& localAddr, const InetAddr& peerAddr);
-    explicit TcpConnection(std::unique_ptr<Channel>&, const std::string& name, const InetAddr& localAddr, const InetAddr& peerAddr);
+    explicit TcpConnection(Channel*&, const std::string& name, const InetAddr& localAddr, const InetAddr& peerAddr);
     ~TcpConnection();
 
     EventLoop* getLoop() const { return loop_; }
@@ -119,7 +119,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     bool reading_;
     // we don't expose those classes to client.
     std::unique_ptr<Socket> socket_;
-    std::unique_ptr<Channel> channel_;
+    Channel* channel_;
     const InetAddr localAddr_;
     const InetAddr peerAddr_;
     ConnectionCallback connectionCallback_;

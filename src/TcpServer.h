@@ -5,6 +5,7 @@
 #include <map>
 
 #include "EventloopThreadPool.h"
+#include "SignalHandler.h"
 #include "TcpConnection.h"
 
 class TcpServer
@@ -61,10 +62,12 @@ class TcpServer
    private:
     /// Not thread safe, but in loop
     void newConnection(int sockfd, InetAddr peerAddr);
+
+    void handle_signal();
     /// Thread safe.
-    void removeConnection(const TcpConnectionPtr& conn);
+    void removeConnection(TcpConnectionPtr conn);
     /// Not thread safe, but in loop
-    void removeConnectionInLoop(const TcpConnectionPtr& conn);
+    void removeConnectionInLoop(TcpConnectionPtr conn);
 
     typedef std::map<std::string, TcpConnectionPtr> ConnectionMap;
 
@@ -81,4 +84,5 @@ class TcpServer
     // always in loop thread
     int nextConnId_;
     ConnectionMap connections_;
+    SignalHandler signal_handler;
 };

@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "Acceptor.h"
-#include "CountDownLatch.h"
 #include "Poller.h"
 #include "Timer.h"
 #include "Timestamp.h"
@@ -33,11 +32,12 @@ class EventLoop
     void addTimer(Timer*);
     void cancelTimer(Timer*);
     void runAt(triggerTime_t triggerTime_, TimerCallback cb);
-    void runAfter(triggerTime_t after, TimerCallback cb);
-    void runEvery(triggerTime_t triggerTime_, TimerCallback cb, double repeatCircle_);
+    void runAfter(double after, TimerCallback cb);
+    void runEvery(TimerCallback cb, double repeatCircle_);
 
     void wakeup();
     Channel* add_channel(int fd);
+    void add_channel(Channel*);
     void updateChannel(Channel* ch);
     void removeChannel(Channel* ch);
     bool hasChannal(Channel* ch);
@@ -55,9 +55,9 @@ class EventLoop
     bool eventHandling;
     bool callingPendingFunctors;
     int wakeup_fd;
-    const pid_t tid;
+    const pid_t tid_;
     std::unique_ptr<Poller> epoller;
-    std::unique_ptr<Channel> wakeupChannel;
+    Channel* wakeupChannel;
     std::vector<Channel*> activeChannels;
     Channel* cur_activeCh;
     Timestamp pollReturnTime;

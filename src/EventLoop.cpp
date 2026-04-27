@@ -9,10 +9,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <vector>
 
 #include "Channel.h"
-#include "CurrentThread.h"
 #include "Logger.h"
 #include "Poller.h"
 #include "TimerQueue.h"
@@ -31,16 +31,16 @@ int createEventfd()
         LOG_ERROR << " wakeup fd create failed !";
         abort();
     }
-    LOG_DEBUG << " evfd=" << evfd;
+    LOG_TRACE << " evfd=" << evfd;
     return evfd;
 }
 
-EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), callingPendingFunctors(false), wakeup_fd(createEventfd()), tid(CurrentThread::tid()), epoller(new Epoller(this)), wakeupChannel(add_channel(wakeup_fd)), cur_activeCh(NULL)
+EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), callingPendingFunctors(false), wakeup_fd(createEventfd()), tid_(CurrentThread::tid()), epoller(new Epoller(this)), wakeupChannel(add_channel(wakeup_fd)), cur_activeCh(NULL), timerQueue(std::make_unique<TimerQueue>(this))
 {
-    LOG_DEBUG << "EventLoop created " << this << " in thread " << tid;
+    LOG_DEBUG << "EventLoop created " << this << " in thread " << tid_;
     if (loopInThisThread)
     {
-        LOG_FATAL << "Another EventLoop " << loopInThisThread << " exists in this thread " << tid;
+        LOG_FATAL << "Another EventLoop " << loopInThisThread << " exists in this thread " << tid_;
     }
     else
     {
@@ -50,11 +50,16 @@ EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), call
     wakeupChannel->EnableRead();
 }
 
-EventLoop::~EventLoop() {}
+EventLoop::~EventLoop()
+{
+    for (auto it : activeChannels)
+    {
+    }
+}
 
-bool EventLoop::isInLoopThread() { return tid == CurrentThread::tid(); }
+bool EventLoop::isInLoopThread() { return tid_ == CurrentThread::tid(); }
 
-void EventLoop::abortNotInLoopThread() { LOG_FATAL << "EventLoop::abortNotInLoopThread - EventLoop " << this << " was created in tid = " << tid << ", current thread id = " << CurrentThread::tid(); }
+void EventLoop::abortNotInLoopThread() { LOG_FATAL << "EventLoop::abortNotInLoopThread - EventLoop " << this << " was created in tid = " << tid_ << ", current thread id = " << CurrentThread::tid(); }
 
 void EventLoop::assertInLoopThread()
 {
@@ -93,8 +98,8 @@ void EventLoop::Loop()
         for (Functor f : pendingFunctors)
         {
             f();
-            pendingFunctors.clear();
         }
+        pendingFunctors.clear();
         callingPendingFunctors = false;
     }
 
@@ -111,6 +116,7 @@ void EventLoop::quit_()
 
 void EventLoop::runInLoop(Functor cb)
 {
+    LOG_DEBUG << " ";
     if (isInLoopThread())
         cb();
     else
@@ -127,9 +133,25 @@ void EventLoop::queueInLoop(Functor cb)
     if (!isInLoopThread() || callingPendingFunctors) wakeup();
 }
 
-void EventLoop::runAt(triggerTime_t triggerTime, TimerCallback cb) { timerQueue->addTimer(triggerTime, cb, 0); }
-void EventLoop::runAfter(triggerTime_t after, TimerCallback cb) { timerQueue->addTimer(Timestamp::now_microsecconds() + after, cb, 0); }
-void EventLoop::runEvery(triggerTime_t triggerTime_, TimerCallback cb, double repeatCircle_) { timerQueue->addTimer(triggerTime_, cb, repeatCircle_); }
+void EventLoop::runAt(triggerTime_t _triggerTime, TimerCallback _cb)
+{
+    LOG_DEBUG << " ";
+    timerQueue->addTimer(_triggerTime, _cb, 0);
+}
+
+// @_P _after:second
+void EventLoop::runAfter(double _after, TimerCallback _cb)
+{
+    LOG_DEBUG << " ";
+    timerQueue->addTimer(Timestamp::now_microsecconds() + _after * 1000000, _cb, 0);
+}
+
+// @_P _repeatCircle:second
+void EventLoop::runEvery(TimerCallback _cb, double _repeatCircle)
+{
+    LOG_DEBUG << " ";
+    timerQueue->addTimer(Timestamp::now_microsecconds(), _cb, _repeatCircle);
+}
 
 void EventLoop::addTimer(Timer* timer_)
 {
@@ -169,9 +191,11 @@ void EventLoop::handleRead()
 
 Channel* EventLoop::add_channel(int fd)
 {
-    assertInLoopThread();
+    // assertInLoopThread();
     return epoller->add_channel(fd);
 }
+
+void EventLoop::add_channel(Channel* _ch) { epoller->updateChannel(_ch); }
 
 void EventLoop::updateChannel(Channel* ch)
 {

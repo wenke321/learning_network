@@ -5,8 +5,6 @@
 #include <ctime>
 #include <memory>
 
-#include "CountDownLatch.h"
-#include "CurrentThread.h"
 #include "FileUtil.h"
 
 LogFile::LogFile(const std::string& basename_, unsigned int rollSize_, int flushInterval_, int checkInterval_, bool threadSafe) : count(0), basename(basename_), rollSize(rollSize_), flushInterval(flushInterval_), checkInterval(checkInterval_), mutex(threadSafe ? std::make_unique<MutexLock>() : nullptr), startOfPeriod(0), lastRoll(0), lastFlush(0)
