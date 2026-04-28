@@ -5,6 +5,7 @@
 
 #include "CountDownLatch.h"
 #include "EventLoop.h"
+#include "Logger.h"
 #include "Thread.h"
 
 void default_cb(EventLoop* l) {}
@@ -13,6 +14,7 @@ EventloopThread::EventloopThread(const std::string& name_, ThreadInitCallback cb
 
 EventloopThread::~EventloopThread()
 {
+    LOG_DEBUG << " ";
     exiting = true;
     if (loop != nullptr)
     {
@@ -55,6 +57,9 @@ void EventloopThread::threadFunc()
     }
 
     loop_.Loop();
+
+    int err = errno;
+    LOG_DEBUG << " errno=" << err;
 
     MutexLockGuard lock(mutex);
     loop = nullptr;

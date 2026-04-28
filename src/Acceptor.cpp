@@ -9,6 +9,7 @@
 
 #include "Channel.h"
 #include "EventLoop.h"
+#include "InetAddr.h"
 #include "Logger.h"
 #include "Socket.h"
 
@@ -25,8 +26,9 @@ Acceptor::Acceptor(EventLoop* loop, const InetAddr& listenAddr, bool reuseport) 
 
 Acceptor::~Acceptor()
 {
-    acceptChannel_->DisableAll();
-    acceptChannel_->remove();
+    LOG_DEBUG << " ";
+    if (listening_) acceptChannel_->DisableRead();
+    // acceptChannel_->remove();
     ::close(idleFd_);
 }
 
@@ -53,11 +55,11 @@ void Acceptor::handleRead()
 {
     LOG_TRACE << "Acceptor::handleRead";
     loop_->assertInLoopThread();
-    InetAddr peerAddr;
+    InetAddr* peerAddr = new InetAddr;
 
     while (1)
     {
-        int connfd = acceptSocket_.accept(&peerAddr);
+        int connfd = acceptSocket_.accept(peerAddr);
         if (connfd >= 0)
         {
             LOG_TRACE << "new connection come";

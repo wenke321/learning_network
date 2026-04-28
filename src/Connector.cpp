@@ -133,7 +133,7 @@ int Connector::removeAndResetChannel()
     channel_->DisableAll();
     int serverfd = channel_->fd_();
     // Can't reset channel_ here, because we are inside Channel::handleEvent
-    loop_->removeChannel(channel_);  // FIXME: unsafe
+    // loop_->removeChannel(channel_);  // FIXME: unsafe
     return serverfd;
 }
 

@@ -30,7 +30,7 @@ class EchoClient
    private:
     void onConnection(const TcpConnectionPtr& conn)
     {
-        LOG_TRACE << conn->localAddress().ipPortStr() << " -> " << conn->peerAddress().ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
+        LOG_TRACE << conn->localAddress()->ipPortStr() << " -> " << conn->peerAddress()->ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
 
         if (conn->connected())
         {
@@ -41,7 +41,7 @@ class EchoClient
             }
             LOG_INFO << "*** connected " << current;
         }
-        conn->send("world\n");
+        // conn->send("world\n");
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)
@@ -59,7 +59,8 @@ class EchoClient
         }
         else
         {
-            conn->send(msg);
+            // conn->send(msg);
+            conn->send("world\n");
         }
     }
 

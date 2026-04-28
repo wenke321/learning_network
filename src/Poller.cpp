@@ -7,12 +7,14 @@
 #include "Channel.h"
 #include "EventLoop.h"
 #include "Logger.h"
+#include "Mutex.h"
 
 #define InitEventNum 1000
 
-Poller::Poller(EventLoop* loop_) : owner_loop(loop_) {}
+Poller::Poller(EventLoop* loop_) : owner_loop(loop_), mutex() {}
 Poller::~Poller()
 {
+    LOG_DEBUG << " ";
     for (auto it : m_channels)
     {
         // it.second->DisableAll();
@@ -52,9 +54,8 @@ void Poller::removeChannel(Channel* ch)
     int fd = ch->fd_();
     assert(m_channels.find(fd) != m_channels.end());
 
-    delete ch;
-
     m_channels.erase(fd);
+    delete ch;
 }
 
 void Poller::assertInLoopThread() { owner_loop->assertInLoopThread(); }

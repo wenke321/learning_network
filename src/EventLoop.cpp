@@ -52,9 +52,8 @@ EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), call
 
 EventLoop::~EventLoop()
 {
-    for (auto it : activeChannels)
-    {
-    }
+    int err = errno;
+    LOG_DEBUG << " " << err;
 }
 
 bool EventLoop::isInLoopThread() { return tid_ == CurrentThread::tid(); }
@@ -70,11 +69,6 @@ void EventLoop::Loop()
 {
     assert(!looping);
     assertInLoopThread();
-    {
-        MutexLockGuard lock(mutex);
-        if (quit == true) return;
-    }
-
     looping = true;
     LOG_DEBUG << " start";
     while (!quit)
@@ -97,7 +91,7 @@ void EventLoop::Loop()
         LOG_TRACE << " do pendingFunctors";
         for (Functor f : pendingFunctors)
         {
-            f();
+            if (f) f();
         }
         pendingFunctors.clear();
         callingPendingFunctors = false;
@@ -120,15 +114,15 @@ void EventLoop::runInLoop(Functor cb)
     if (isInLoopThread())
         cb();
     else
+    {
         queueInLoop(cb);
+        wakeup();
+    }
 }
 
 void EventLoop::queueInLoop(Functor cb)
 {
-    {
-        MutexLockGuard lock(mutex);
-        pendingFunctors.push_back(cb);
-    }
+    pendingFunctors.push_back(cb);
 
     if (!isInLoopThread() || callingPendingFunctors) wakeup();
 }

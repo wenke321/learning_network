@@ -12,7 +12,7 @@ class Channel;
 class Acceptor
 {
    public:
-    typedef std::function<void(int sockfd, const InetAddr&)> NewConnectionCallback;
+    typedef std::function<void(int sockfd, const InetAddr*)> NewConnectionCallback;
 
     Acceptor(EventLoop* loop, const InetAddr& listenAddr, bool reuseport);
     ~Acceptor();

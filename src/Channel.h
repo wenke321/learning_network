@@ -34,7 +34,7 @@ class Channel
     int ready_events_() const;
     bool isNoneEvent() const;
     void set_ready_event(int ev);
-    void tie_(const std::shared_ptr<void>&);
+    void tie_(std::shared_ptr<void>);
 
     void reset_listen_events();
     void set_read_callback(std::function<void()> callback);

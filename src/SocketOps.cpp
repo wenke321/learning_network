@@ -112,6 +112,14 @@ void sockOption::shutdownWrite(int sockfd)
     }
 }
 
+void sockOption::shutdown(int fd)
+{
+    if (::shutdown(fd, SHUT_RDWR) < 0)
+    {
+        LOG_ERROR << "SHUT_WR,fd=" << fd;
+    }
+}
+
 void sockOption::toIpPort(char* buf, size_t size, const struct sockaddr* addr)
 {
     if (addr->sa_family == AF_INET6)

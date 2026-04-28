@@ -30,14 +30,14 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     /// Constructs a TcpConnection with a connected sockfd
     ///
     /// User should not create this object.
-    explicit TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr& localAddr, const InetAddr& peerAddr);
-    explicit TcpConnection(Channel*&, const std::string& name, const InetAddr& localAddr, const InetAddr& peerAddr);
+    explicit TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr);
+    explicit TcpConnection(Channel*&, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr);
     ~TcpConnection();
 
     EventLoop* getLoop() const { return loop_; }
     const std::string& name() const { return name_; }
-    const InetAddr& localAddress() const { return localAddr_; }
-    const InetAddr& peerAddress() const { return peerAddr_; }
+    const InetAddr* localAddress() const { return localAddr_; }
+    const InetAddr* peerAddress() const { return peerAddr_; }
     bool connected() const { return state_ == kConnected; }
     bool disconnected() const { return state_ == kDisconnected; }
     // return true if success.
@@ -120,8 +120,8 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     // we don't expose those classes to client.
     std::unique_ptr<Socket> socket_;
     Channel* channel_;
-    const InetAddr localAddr_;
-    const InetAddr peerAddr_;
+    const InetAddr* localAddr_;
+    const InetAddr* peerAddr_;
     ConnectionCallback connectionCallback_;
     MessageCallback messageCallback_;
     WriteCompleteCallback writeCompleteCallback_;

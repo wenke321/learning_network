@@ -38,7 +38,7 @@ class EchoServer
    private:
     void onConnection(const TcpConnectionPtr& conn)
     {
-        LOG_TRACE << conn->peerAddress().ipPortStr() << " -> " << conn->localAddress().ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
+        LOG_TRACE << conn->peerAddress()->ipPortStr() << " -> " << conn->localAddress()->ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
         // LOG_INFO << conn->getTcpInfoString();
 
         g_request_count++;

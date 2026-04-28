@@ -21,6 +21,8 @@ class Socket
     void listen() const;
     int accept(InetAddr* peeraddr) const;
     void shutdownWrite();
+    void shutdown();
+    void close();
     void setTcpNoDelay(bool on);
     void setReuseAddr(bool on);
     void setReusePort(bool on);

@@ -44,7 +44,7 @@ TimerQueue::TimerQueue(EventLoop* loop_) : own_loop(loop_), timerfd(createTimerf
 }
 
 // Timer* should be managed by who create them
-TimerQueue::~TimerQueue() {}
+TimerQueue::~TimerQueue() { LOG_DEBUG << " "; }
 
 void TimerQueue::addTimer(triggerTime_t _triggerTime, TimerCallback _cb, double _repeatCircle)
 {

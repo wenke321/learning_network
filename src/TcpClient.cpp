@@ -3,8 +3,12 @@
 
 #include <stdio.h>  // snprintf
 
+#include <csignal>
+
 #include "Connector.h"
+#include "InetAddr.h"
 #include "Logger.h"
+#include "SignalHandler.h"
 #include "Timer.h"
 #include "Timestamp.h"
 
@@ -33,6 +37,9 @@ TcpClient::TcpClient(EventLoop* loop, const InetAddr& serverAddr, const std::str
     connector_->setNewConnectionCallback([this](int fd) { newConnection(fd); });
     // FIXME setConnectFailedCallback
     LOG_INFO << "TcpClient::TcpClient[" << name_ << "] - connector " << connector_.get();
+
+    signal_handler.init(loop, [&] { handle_signal(); });
+    signal(SIGPIPE, SIG_IGN);
 }
 
 TcpClient::~TcpClient()
@@ -96,13 +103,13 @@ void TcpClient::newConnection(int sockfd)
 {
     LOG_TRACE << "TcpClient::newConnection";
     loop_->assertInLoopThread();
-    InetAddr peerAddr(sockOption::getPeerAddr(sockfd));
+    InetAddr* peerAddr = new InetAddr(sockOption::getPeerAddr(sockfd));
     char buf[32];
-    snprintf(buf, sizeof buf, ":%s#%d", peerAddr.ipPortStr().c_str(), nextConnId_);
+    snprintf(buf, sizeof buf, ":%s#%d", peerAddr->ipPortStr().c_str(), nextConnId_);
     ++nextConnId_;
     std::string connName = name_ + buf;
 
-    InetAddr localAddr(sockOption::getLocalAddr(sockfd));
+    InetAddr* localAddr = new InetAddr(sockOption::getLocalAddr(sockfd));
     // FIXME poll with zero timeout to double confirm the new connection
     // FIXME use make_shared if necessary
     TcpConnectionPtr conn(new TcpConnection(connector_->ch_(), connName, localAddr, peerAddr));
@@ -136,4 +143,15 @@ void TcpClient::removeConnection(TcpConnectionPtr conn)
         LOG_INFO << "TcpClient::connect[" << name_ << "] - Reconnecting to " << connector_->serverAddress().ipPortStr();
         connector_->restart();
     }
+}
+
+void TcpClient::handle_signal()
+{
+    if (connection_)
+    {
+        connection_->connectDestroyed();
+        connection_.reset();
+    }
+    connect_ = false;
+    // loop_->quit_();
 }

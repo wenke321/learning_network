@@ -4,6 +4,7 @@
 
 #include "EventLoop.h"
 #include "InetAddr.h"
+#include "SignalHandler.h"
 #include "TcpConnection.h"
 
 class Connector;
@@ -51,6 +52,8 @@ class TcpClient
     /// Not thread safe, but in loop
     void removeConnection(TcpConnectionPtr conn);
 
+    void handle_signal();
+
     EventLoop* loop_;
     ConnectorPtr connector_;  // avoid revealing Connector
     const std::string name_;
@@ -63,4 +66,5 @@ class TcpClient
     int nextConnId_;
     mutable MutexLock mutex_;
     TcpConnectionPtr connection_;
+    SignalHandler signal_handler;
 };

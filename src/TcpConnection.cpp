@@ -4,11 +4,11 @@
 #include <unistd.h>
 
 #include <cassert>
+#include <cerrno>
 #include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
-#include <utility>
 
 #include "Buffer.h"
 #include "Channel.h"
@@ -20,13 +20,13 @@
 
 void defaultConnectionCallback(const TcpConnectionPtr& conn)
 {
-    LOG_TRACE << conn->localAddress().ipPortStr() << " -> " << conn->peerAddress().ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
+    LOG_TRACE << conn->localAddress()->ipPortStr() << " -> " << conn->peerAddress()->ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
     // do not call conn->forceClose(), because some users want to register message callback only.
 }
 
 void defaultMessageCallback(const TcpConnectionPtr&, Buffer* buf) { buf->retrieveAll(); }
 
-TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int sockfd, const InetAddr& localAddr, const InetAddr& peerAddr) : loop_(loop), name_(nameArg), state_(kConnecting), reading_(true), socket_(new Socket(sockfd)), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
+TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr) : loop_(loop), name_(nameArg), state_(kConnecting), reading_(true), socket_(new Socket(sockfd)), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
 {
     channel_ = loop_->add_channel(sockfd);
     channel_->set_read_callback([this] { handleRead(); });
@@ -37,7 +37,7 @@ TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int so
     socket_->setKeepAlive(true);
 }
 
-TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAddr& localAddr, const InetAddr& peerAddr) : name_(name), state_(kConnecting), reading_(true), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
+TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr) : name_(name), state_(kConnecting), reading_(true), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
 {
     channel_ = ch;
     loop_    = channel_->owner_loop();
@@ -167,7 +167,7 @@ void TcpConnection::shutdown()
     // FIXME: use compare and swap
     if (state_ == kConnected)
     {
-        LOG_INFO << "TcpConnection::shutdown,fd=" << channel_->fd_() << " local addr=" << localAddr_.ipPortStr();
+        LOG_INFO << "TcpConnection::shutdown,fd=" << channel_->fd_() << " local addr=" << localAddr_->ipPortStr();
         setState(kDisconnecting);
 
         loop_->runInLoop([conn_ = shared_from_this()] { conn_->shutdownInLoop(); });
@@ -180,7 +180,7 @@ void TcpConnection::shutdownInLoop()
     loop_->assertInLoopThread();
 
     // we are not writing
-    socket_->shutdownWrite();
+    socket_->shutdown();
 }
 
 // void TcpConnection::shutdownAndForceCloseAfter(double seconds)
@@ -300,12 +300,18 @@ void TcpConnection::connectDestroyed()
     loop_->assertInLoopThread();
     if (state_ == kConnected)
     {
-        setState(kDisconnected);
+        socket_->shutdown();
         channel_->DisableAll();
+        socket_->close();
+        setState(kDisconnected);
 
         // connectionCallback_(shared_from_this());
     }
-    channel_->remove();
+    else
+    {
+        LOG_ERROR << " TcpConnection::connectDestroyed,state_!=kConnected";
+    }
+    // channel_->remove();
 }
 
 void TcpConnection::handleRead()
@@ -321,7 +327,7 @@ void TcpConnection::handleRead()
     else if (n == 0)
     {
         LOG_ERROR << " EOF,should close";
-        if (state_ == kConnected) handleClose();
+        handleClose();
     }
     else
     {
@@ -356,6 +362,11 @@ void TcpConnection::handleWrite()
         else
         {
             LOG_SYSERR << "TcpConnection::handleWrite";
+            if (errno == EPIPE || errno == ECONNRESET)
+            {
+                LOG_ERROR << " EPIPE,fd=" << channel_->fd_();
+                handleClose();
+            }
             // if (state_ == kDisconnecting)
             // {
             //   shutdownInLoop();
@@ -379,12 +390,10 @@ void TcpConnection::handleClose()
     {
         LOG_WARN << "he close in unexpected way";
     }
-    channel_->DisableAll();
-    setState(kDisconnected);
 
     // TcpConnectionPtr guardThis(shared_from_this());
     // must be the last line
-    closeCallback_(shared_from_this());
+    loop_->runInLoop([=] { closeCallback_(shared_from_this()); });
 }
 
 void TcpConnection::handleError()

@@ -15,9 +15,10 @@
 
 TcpServer::TcpServer(EventLoop* loop, const InetAddr& listenAddr, const std::string& nameArg, Option option) : loop_(loop), ipPort_(listenAddr.ipPortStr()), name_(nameArg), acceptor_(new Acceptor(loop, listenAddr, option == ReusePort)), threadPool_(new EventloopThreadPool(loop, name_)), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), nextConnId_(1), signal_handler()
 {
-    acceptor_->setNewConnectionCallback([=](int sockfd, const InetAddr& peerAddr_) { newConnection(sockfd, peerAddr_); });
+    acceptor_->setNewConnectionCallback([=](int sockfd, const InetAddr* peerAddr_) { newConnection(sockfd, peerAddr_); });
 
-    signal_handler.init(loop, [&] { handle_signal(); });
+    signal_handler.init(loop_, [&] { handle_signal(); });
+    signal(SIGPIPE, SIG_IGN);
 }
 
 TcpServer::~TcpServer()
@@ -29,7 +30,7 @@ TcpServer::~TcpServer()
     {
         TcpConnectionPtr conn(item.second);
         item.second.reset();
-        conn->getLoop()->runInLoop([conn_ = conn] { conn_->connectDestroyed(); });
+        conn->getLoop()->runInLoop([=] { conn->connectDestroyed(); });
     }
 }
 
@@ -58,7 +59,7 @@ void TcpServer::start()
     }
 }
 
-void TcpServer::newConnection(int sockfd, InetAddr peerAddr)
+void TcpServer::newConnection(int sockfd, const InetAddr* peerAddr)
 {
     LOG_TRACE << "TcpServer::newConnection";
     loop_->assertInLoopThread();
@@ -68,23 +69,32 @@ void TcpServer::newConnection(int sockfd, InetAddr peerAddr)
     ++nextConnId_;
     std::string connName = name_ + buf;
 
-    LOG_INFO << "TcpServer::newConnection [" << name_ << "] - new connection [" << connName << "] from " << peerAddr.ipPortStr();
-    InetAddr localAddr(sockOption::getLocalAddr(sockfd));
+    LOG_INFO << "TcpServer::newConnection [" << name_ << "] - new connection [" << connName << "] from " << peerAddr->ipPortStr();
     // FIXME poll with zero timeout to double confirm the new connection
     // FIXME use make_shared if necessary
-    TcpConnectionPtr conn  = std::make_shared<TcpConnection>(ioLoop, connName, sockfd, localAddr, peerAddr);
-    connections_[connName] = conn;
-    conn->setConnectionCallback(connectionCallback_);
-    conn->setMessageCallback(messageCallback_);
-    conn->setWriteCompleteCallback(writeCompleteCallback_);
-    conn->setCloseCallback([this](TcpConnectionPtr conn) { removeConnection(conn); });  // FIXME: unsafe
-    ioLoop->runInLoop([conn_ = conn] { conn_->connectEstablished(); });
+    InetAddr* localAddr = new InetAddr(sockOption::getLocalAddr(sockfd));
+    ioLoop->runInLoop(
+        [=]
+        {
+            TcpConnectionPtr conn = std::make_shared<TcpConnection>(ioLoop, connName, sockfd, localAddr, peerAddr);
+
+            conn->setConnectionCallback(connectionCallback_);
+            conn->setMessageCallback(messageCallback_);
+            conn->setWriteCompleteCallback(writeCompleteCallback_);
+            conn->setCloseCallback([this](TcpConnectionPtr _conn) { removeConnection(_conn); });
+            loop_->runInLoop(
+                [=]
+                {
+                    connections_[connName] = conn;
+                    conn->connectEstablished();
+                });
+        });
 }
 
 void TcpServer::removeConnection(TcpConnectionPtr conn)
 {
     // FIXME: unsafe
-    loop_->runInLoop([this, conn_ = conn] { removeConnectionInLoop(conn_); });
+    loop_->runInLoop([=] { removeConnectionInLoop(conn); });
 }
 
 void TcpServer::removeConnectionInLoop(TcpConnectionPtr conn)
@@ -95,7 +105,7 @@ void TcpServer::removeConnectionInLoop(TcpConnectionPtr conn)
     (void)n;
     assert(n == 1);
     EventLoop* ioLoop = conn->getLoop();
-    ioLoop->runInLoop([conn_ = conn] { conn_->connectDestroyed(); });
+    ioLoop->runInLoop([=] { conn->connectDestroyed(); });
 }
 
 void TcpServer::handle_signal()
@@ -104,10 +114,11 @@ void TcpServer::handle_signal()
     acceptor_->stop();
     for (auto conn : connections_)
     {
-        conn.second->shutdown();
-        removeConnection(conn.second);
+        auto it = conn.second;
+        it->shutdown();
+        it->getLoop()->runInLoop([=] { it->connectDestroyed(); });
     }
 
     for (auto l : threadPool_->get_loops()) l->quit_();
-    loop_->quit_();
+    loop_->runInLoop([=] { loop_->quit_(); });
 }

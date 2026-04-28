@@ -25,9 +25,11 @@ Channel::Channel(int fd_, EventLoop* loop_) : fd(fd_), idx(ch_deleted), loop(loo
 
 Channel::~Channel()
 {
+    LOG_DEBUG << " ";
     assert(!eventHandling);
     assert(!addedToLoop);
     loop->assertInLoopThread();
+    tiedObj.reset();
     ::close(fd);
 }
 
@@ -84,6 +86,7 @@ void Channel::HandleEvent_tied()
         LOG_TRACE << " EPOLLIN";
         if (read_callback) read_callback();
     }
+
     if (ready_events == (EPOLLHUP | EPOLLIN))
     {
         LOG_TRACE << " EPOLLHUP|EPOLLIN";
@@ -177,7 +180,7 @@ void Channel::set_ready_event(int ev)
     ready_events = ev;
 }
 
-void Channel::tie_(const std::shared_ptr<void>& obj)
+void Channel::tie_(std::shared_ptr<void> obj)
 {
     LOG_TRACE << " fd=" << fd;
     tiedObj = obj;
@@ -187,21 +190,21 @@ void Channel::tie_(const std::shared_ptr<void>& obj)
 void Channel::set_read_callback(std::function<void()> callback)
 {
     LOG_TRACE << " fd=" << fd;
-    read_callback = std::move(callback);
+    read_callback = callback;
     // if (!read_callback) LOG_DEBUG << " failed";
 }
 void Channel::set_write_callback(std::function<void()> callback)
 {
     LOG_TRACE << " fd=" << fd;
-    write_callback = std::move(callback);
+    write_callback = callback;
 }
 void Channel::set_error_callback(std::function<void()> callback)
 {
     LOG_TRACE << " fd=" << fd;
-    error_callback = std::move(callback);
+    error_callback = callback;
 }
 void Channel::set_close_callback(std::function<void()> callback)
 {
     LOG_TRACE << " fd=" << fd;
-    close_callback = std::move(callback);
+    close_callback = callback;
 }

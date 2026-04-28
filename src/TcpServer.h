@@ -61,7 +61,7 @@ class TcpServer
 
    private:
     /// Not thread safe, but in loop
-    void newConnection(int sockfd, InetAddr peerAddr);
+    void newConnection(int sockfd, const InetAddr* peerAddr);
 
     void handle_signal();
     /// Thread safe.

@@ -51,8 +51,10 @@ struct ThreadData
         catch (const std::exception& ex)
         {
             CurrentThread::Tname = "crashed";
+            int err              = errno;
             fprintf(stderr, "exception caught in Thread %s\n", name_.c_str());
             fprintf(stderr, "reason: %s\n", ex.what());
+            fprintf(stderr, "errno: %d\n", err);
             abort();
         }
         catch (...)
