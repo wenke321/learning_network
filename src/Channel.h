@@ -37,10 +37,13 @@ class Channel
     void tie_(std::shared_ptr<void>);
 
     void reset_listen_events();
-    void set_read_callback(std::function<void()> callback);
-    void set_write_callback(std::function<void()> callback);
-    void set_error_callback(std::function<void()> callback);
-    void set_close_callback(std::function<void()> callback);
+
+    void set_pri_callback(std::function<void()> callback);
+    void set_in_callback(std::function<void()> callback);
+    void set_out_callback(std::function<void()> callback);
+    void set_err_callback(std::function<void()> callback);
+    void set_hup_callback(std::function<void()> callback);
+    void set_rdhup_callback(std::function<void()> callback);
 
     static const int READ_EVENT;
     static const int WRITE_EVENT;
@@ -58,10 +61,12 @@ class Channel
     int ready_events;
     bool addedToLoop;
     bool eventHandling;
-    std::function<void()> read_callback;
-    std::function<void()> write_callback;
-    std::function<void()> error_callback;
-    std::function<void()> close_callback;
+    std::function<void()> pri_callback;
+    std::function<void()> in_callback;
+    std::function<void()> out_callback;
+    std::function<void()> err_callback;
+    std::function<void()> hup_callback;
+    std::function<void()> rdhup_callback;
     bool tied;
     std::weak_ptr<void> tiedObj;
 };

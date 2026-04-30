@@ -21,7 +21,7 @@ Acceptor::Acceptor(EventLoop* loop, const InetAddr& listenAddr, bool reuseport) 
     acceptSocket_.setReusePort(reuseport);
     acceptSocket_.bind(listenAddr);
     acceptSocket_.listen();
-    acceptChannel_->set_read_callback([this] { handleRead(); });
+    acceptChannel_->set_in_callback([this] { handleRead(); });
 }
 
 Acceptor::~Acceptor()
@@ -59,7 +59,8 @@ void Acceptor::handleRead()
 
     while (1)
     {
-        int connfd = acceptSocket_.accept(peerAddr);
+        int connfd     = acceptSocket_.accept(peerAddr);
+        int savedErrno = errno;
         if (connfd >= 0)
         {
             LOG_TRACE << "new connection come";
@@ -75,7 +76,6 @@ void Acceptor::handleRead()
         }
         else
         {
-            int savedErrno = errno;
             switch (savedErrno)
             {
                 case EAGAIN:
@@ -85,7 +85,7 @@ void Acceptor::handleRead()
                 case EINTR:
                 case EPERM:
                     // expected errors
-                    errno = savedErrno;
+                    // errno = savedErrno;
                 case EBADF:
                 case EFAULT:
                 case EINVAL:
@@ -107,7 +107,7 @@ void Acceptor::handleRead()
             // // Read the section named "The special problem of
             // // accept()ing when you can't" in libev's doc.
             // // By Marc Lehmann, author of libev.
-            // if (errno == EMFILE)
+            // if (savedErrno == EMFILE)
             // {
             //     ::close(idleFd_);
             //     idleFd_ = ::accept(acceptSocket_.fd_(), NULL, NULL);

@@ -50,6 +50,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     // void send(Buffer&& message); // C++11
     void send(Buffer* message);  // this one will swap data
     void shutdown();             // NOT thread safe, no simultaneous calling
+    void shutdown_write();
     // void shutdownAndForceCloseAfter(double seconds); // NOT thread safe, no simultaneous calling
     void forceClose();
     void forceCloseWithDelay(double seconds);
@@ -98,10 +99,13 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
         kConnected,
         kDisconnecting
     };
-    void handleRead();
-    void handleWrite();
-    void handleClose();
-    void handleError();
+    void handle_ep_pri();
+    void handle_ep_in();
+    void handle_ep_out();
+    bool finish_in_out();
+    void handle_ep_rdhup();
+    void handle_ep_hup();
+    void handle_ep_err();
     // void sendInLoop(string&& message);
     void sendInLoop(const stringPiece& message);
     void sendInLoop(const void* message, size_t len);
@@ -117,6 +121,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     const std::string name_;
     StateE state_;  // FIXME: use atomic variable
     bool reading_;
+    bool rdhup_phrase;
     // we don't expose those classes to client.
     std::unique_ptr<Socket> socket_;
     Channel* channel_;

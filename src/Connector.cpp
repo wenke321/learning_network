@@ -96,7 +96,6 @@ void Connector::connect()
         default:
             LOG_SYSERR << "Unexpected error in Connector::startInLoop " << savedErrno;
             sockOption::close(serverfd);
-            // connectErrorCallback_();
             break;
     }
 }
@@ -118,8 +117,8 @@ void Connector::connecting(int serverfd)
     if (!channel_)
     {
         channel_ = loop_->add_channel(serverfd);
-        channel_->set_write_callback([this] { handleWrite(); });  // FIXME: unsafe
-        channel_->set_error_callback([this] { handleError(); });  // FIXME: unsafe
+        channel_->set_out_callback([this] { check_whether_connected(); });
+        channel_->set_err_callback([this] { handle_err(); });
         channel_->EnableWrite();
     }
     else
@@ -131,15 +130,12 @@ int Connector::removeAndResetChannel()
 {
     LOG_DEBUG << " ";
     channel_->DisableAll();
-    int serverfd = channel_->fd_();
-    // Can't reset channel_ here, because we are inside Channel::handleEvent
-    // loop_->removeChannel(channel_);  // FIXME: unsafe
-    return serverfd;
+    return channel_->fd_();
 }
 
 void Connector::resetChannel() { channel_ = nullptr; }
 
-void Connector::handleWrite()
+void Connector::check_whether_connected()
 {
     LOG_TRACE << " Connector::handleWrite " << state_;
 
@@ -181,7 +177,7 @@ void Connector::handleWrite()
     }
 }
 
-void Connector::handleError()
+void Connector::handle_err()
 {
     LOG_DEBUG << "Connector::handleError state=" << state_;
     if (state_ == Connecting)

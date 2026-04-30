@@ -20,7 +20,7 @@ class TimerQueue
    private:
     void addTimerInLoop(Timer*, bool);
     void cancelTimerInLoop(Timer*, bool);
-    void handleRead();
+    void handle_timers();
     bool insert(Timer*, bool);
     void updateFd(triggerTime_t);
     void reset(triggerTime_t);

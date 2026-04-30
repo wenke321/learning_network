@@ -35,8 +35,8 @@ Channel::~Channel()
 
 EventLoop* Channel::owner_loop() { return loop; }
 void Channel::setIndex(int _idx) { idx = _idx; }
-bool Channel::isWriting() { return ready_events & WRITE_EVENT; }
-bool Channel::isReading() { return ready_events & READ_EVENT; }
+bool Channel::isWriting() { return listen_events & WRITE_EVENT; }
+bool Channel::isReading() { return listen_events & READ_EVENT; }
 
 void Channel::HandleEvent()
 {
@@ -66,51 +66,41 @@ void Channel::HandleEvent_tied()
     if (ready_events & EPOLLERR)
     {
         LOG_TRACE << " EPOLLERR";
-        if (error_callback) error_callback();
-    }
-    if (ready_events & EPOLLOUT)
-    {
-        LOG_TRACE << " EPOLLOUT";
-        if (write_callback) write_callback();
-    }
-
-    // OOB msg
-    if (ready_events & EPOLLPRI)
-    {
-        LOG_TRACE << " EPOLLPRI";
-        if (read_callback) read_callback();
-    }
-
-    if (ready_events & EPOLLIN)
-    {
-        LOG_TRACE << " EPOLLIN";
-        if (read_callback) read_callback();
-    }
-
-    if (ready_events == (EPOLLHUP | EPOLLIN))
-    {
-        LOG_TRACE << " EPOLLHUP|EPOLLIN";
-        // finish recv and close
-    }
-
-    // receive FIN,or he SHUT_WR/close
-    if (ready_events & EPOLLRDHUP)
-    {
-        LOG_TRACE << " EPOLLRDHUP";
-        //
+        if (err_callback) err_callback();
     }
 
     if (ready_events & EPOLLHUP)
     {
         LOG_TRACE << " EPOLLHUP";
         LOG_INFO << "channel close,fd=" << fd;
-        if (close_callback) close_callback();
+        if (hup_callback) hup_callback();
+        return;
     }
 
-    // if (ready_events & POLLNVAL)
-    // {
-    //     LOG_ERROR << "channel invalid,fd=" << fd;
-    // }
+    if (ready_events & EPOLLRDHUP)
+    {
+        LOG_DEBUG << " EPOLLRDHUP";
+        if (rdhup_callback) rdhup_callback();
+    }
+
+    if (ready_events & EPOLLIN)
+    {
+        LOG_TRACE << " EPOLLIN";
+        if (in_callback) in_callback();
+    }
+
+    if (ready_events & EPOLLOUT)
+    {
+        LOG_TRACE << " EPOLLOUT";
+        if (out_callback) out_callback();
+    }
+
+    // OOB msg
+    if (ready_events & EPOLLPRI)
+    {
+        LOG_TRACE << " EPOLLPRI";
+        // oob_callback
+    }
 
     eventHandling = false;
 }
@@ -187,24 +177,32 @@ void Channel::tie_(std::shared_ptr<void> obj)
     tied    = true;
 }
 
-void Channel::set_read_callback(std::function<void()> callback)
+void Channel::set_pri_callback(std::function<void()> callback)
 {
     LOG_TRACE << " fd=" << fd;
-    read_callback = callback;
-    // if (!read_callback) LOG_DEBUG << " failed";
+    pri_callback = callback;
 }
-void Channel::set_write_callback(std::function<void()> callback)
+
+void Channel::set_in_callback(std::function<void()> callback)
 {
     LOG_TRACE << " fd=" << fd;
-    write_callback = callback;
+    in_callback = callback;
 }
-void Channel::set_error_callback(std::function<void()> callback)
+
+void Channel::set_out_callback(std::function<void()> callback)
 {
     LOG_TRACE << " fd=" << fd;
-    error_callback = callback;
+    out_callback = callback;
 }
-void Channel::set_close_callback(std::function<void()> callback)
+
+void Channel::set_err_callback(std::function<void()> callback)
 {
     LOG_TRACE << " fd=" << fd;
-    close_callback = callback;
+    err_callback = callback;
+}
+
+void Channel::set_hup_callback(std::function<void()> callback)
+{
+    LOG_TRACE << " fd=" << fd;
+    hup_callback = callback;
 }

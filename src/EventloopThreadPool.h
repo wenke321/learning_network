@@ -14,7 +14,7 @@ class EventloopThreadPool
     void start(const ThreadInitCallback& cb_);
     void setThreadNum(int n) { threadNum = n; }
     EventLoop* getNextLoop();
-    std::vector<EventLoop*>& get_loops();
+    std::vector<EventLoop*>& get_ioloops();
 
     bool started_() { return started; }
 

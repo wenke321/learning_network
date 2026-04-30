@@ -13,11 +13,11 @@
 #include "SignalHandler.h"
 #include "TcpConnection.h"
 
-TcpServer::TcpServer(EventLoop* loop, const InetAddr& listenAddr, const std::string& nameArg, Option option) : loop_(loop), ipPort_(listenAddr.ipPortStr()), name_(nameArg), acceptor_(new Acceptor(loop, listenAddr, option == ReusePort)), threadPool_(new EventloopThreadPool(loop, name_)), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), nextConnId_(1), signal_handler()
+TcpServer::TcpServer(EventLoop* loop, const InetAddr& listenAddr, const std::string& nameArg, Option option) : loop_(loop), ipPort_(listenAddr.ipPortStr()), name_(nameArg), threadPool_(new EventloopThreadPool(loop, name_)), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), nextConnId_(1), acceptor_(new Acceptor(loop, listenAddr, option == ReusePort)), signal_handler()
 {
     acceptor_->setNewConnectionCallback([=](int sockfd, const InetAddr* peerAddr_) { newConnection(sockfd, peerAddr_); });
 
-    signal_handler.init(loop_, [&] { handle_signal(); });
+    signal_handler.init(loop_, [=] { handle_signal(); });
     signal(SIGPIPE, SIG_IGN);
 }
 
@@ -47,7 +47,7 @@ void TcpServer::start()
         threadPool_->start(threadInitCallback_);
 
         Channel* ch = signal_handler.get_ch();
-        for (auto l : threadPool_->get_loops())
+        for (auto l : threadPool_->get_ioloops())
         {
             // l->runInLoop([&] { l->add_channel(ch); });
             ch->setIndex(Channel::ch_extern);
@@ -93,7 +93,6 @@ void TcpServer::newConnection(int sockfd, const InetAddr* peerAddr)
 
 void TcpServer::removeConnection(TcpConnectionPtr conn)
 {
-    // FIXME: unsafe
     loop_->runInLoop([=] { removeConnectionInLoop(conn); });
 }
 
@@ -104,8 +103,8 @@ void TcpServer::removeConnectionInLoop(TcpConnectionPtr conn)
     size_t n = connections_.erase(conn->name());
     (void)n;
     assert(n == 1);
-    EventLoop* ioLoop = conn->getLoop();
-    ioLoop->runInLoop([=] { conn->connectDestroyed(); });
+    // EventLoop* ioLoop = conn->getLoop();
+    // ioLoop->runInLoop([=] { conn->connectDestroyed(); });
 }
 
 void TcpServer::handle_signal()
@@ -119,6 +118,6 @@ void TcpServer::handle_signal()
         it->getLoop()->runInLoop([=] { it->connectDestroyed(); });
     }
 
-    for (auto l : threadPool_->get_loops()) l->quit_();
+    for (auto l : threadPool_->get_ioloops()) l->quit_();
     loop_->runInLoop([=] { loop_->quit_(); });
 }

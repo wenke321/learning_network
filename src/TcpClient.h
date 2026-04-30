@@ -52,7 +52,7 @@ class TcpClient
     /// Not thread safe, but in loop
     void removeConnection(TcpConnectionPtr conn);
 
-    void handle_signal();
+    void handle_sig_int();
 
     EventLoop* loop_;
     ConnectorPtr connector_;  // avoid revealing Connector

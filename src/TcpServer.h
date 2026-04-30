@@ -74,7 +74,6 @@ class TcpServer
     EventLoop* loop_;  // the acceptor loop
     const std::string ipPort_;
     const std::string name_;
-    std::unique_ptr<Acceptor> acceptor_;  // avoid revealing Acceptor
     std::shared_ptr<EventloopThreadPool> threadPool_;
     ConnectionCallback connectionCallback_;
     MessageCallback messageCallback_;
@@ -84,5 +83,6 @@ class TcpServer
     // always in loop thread
     int nextConnId_;
     ConnectionMap connections_;
+    std::unique_ptr<Acceptor> acceptor_;  // avoid revealing Acceptor
     SignalHandler signal_handler;
 };

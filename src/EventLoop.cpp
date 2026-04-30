@@ -46,7 +46,7 @@ EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), call
     {
         loopInThisThread = this;
     }
-    wakeupChannel->set_read_callback([&] { handleRead(); });
+    wakeupChannel->set_in_callback([&] { handle_wakeup(); });
     wakeupChannel->EnableRead();
 }
 
@@ -171,7 +171,7 @@ void EventLoop::wakeup()
     }
 }
 
-void EventLoop::handleRead()
+void EventLoop::handle_wakeup()
 {
     LOG_DEBUG << " eventfd=" << wakeup_fd;
     uint64_t byte = 1;

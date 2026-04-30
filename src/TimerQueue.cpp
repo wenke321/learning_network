@@ -39,7 +39,7 @@ void periodFromNow(struct itimerspec& newtime_, triggerTime_t& triggerTime_)
 TimerQueue::TimerQueue(EventLoop* loop_) : own_loop(loop_), timerfd(createTimerfd())
 {
     timerChannel = loop_->add_channel(timerfd);
-    timerChannel->set_read_callback([this] { handleRead(); });
+    timerChannel->set_in_callback([this] { handle_timers(); });
     timerChannel->EnableRead();
 }
 
@@ -99,7 +99,7 @@ void TimerQueue::cancelTimerInLoop(Timer* timer_, bool noOwner)
     }
 }
 
-void TimerQueue::handleRead()
+void TimerQueue::handle_timers()
 {
     LOG_DEBUG << " ";
     own_loop->assertInLoopThread();

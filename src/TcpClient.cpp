@@ -38,7 +38,7 @@ TcpClient::TcpClient(EventLoop* loop, const InetAddr& serverAddr, const std::str
     // FIXME setConnectFailedCallback
     LOG_INFO << "TcpClient::TcpClient[" << name_ << "] - connector " << connector_.get();
 
-    signal_handler.init(loop, [&] { handle_signal(); });
+    signal_handler.init(loop, [&] { handle_sig_int(); });
     signal(SIGPIPE, SIG_IGN);
 }
 
@@ -145,12 +145,11 @@ void TcpClient::removeConnection(TcpConnectionPtr conn)
     }
 }
 
-void TcpClient::handle_signal()
+void TcpClient::handle_sig_int()
 {
     if (connection_)
     {
-        connection_->connectDestroyed();
-        connection_.reset();
+        connection_->shutdown_write();
     }
     connect_ = false;
     // loop_->quit_();

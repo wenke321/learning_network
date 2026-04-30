@@ -157,7 +157,7 @@ void Epoller::update(int op, Channel* ch)
     assertInLoopThread();
     int fd = ch->fd_();
     struct epoll_event ev;
-    ev.events   = ch->listen_events_() | EPOLLET;
+    ev.events   = ch->listen_events_() | EPOLLET | EPOLLRDHUP;
     ev.data.ptr = ch;
     if (::epoll_ctl(epfd, op, fd, &ev) < 0)
     {

@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "Endian.h"
+#include "SocketOps.h"
 
 class stringPiece
 {
@@ -329,7 +330,7 @@ class Buffer
 
         if (n < 0)
         {
-            *savedErrno = errno;
+            *savedErrno = sockOption::getSocketError(fd);
         }
         else if ((size_t)n <= writableBytes())
         {

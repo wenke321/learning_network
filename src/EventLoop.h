@@ -47,7 +47,7 @@ class EventLoop
     void assertInLoopThread();
 
    private:
-    void handleRead();  // wakeup
+    void handle_wakeup();  // wakeup
     void doPendingFunctors();
 
     bool quit;

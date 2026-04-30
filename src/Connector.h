@@ -40,8 +40,8 @@ class Connector : public std::enable_shared_from_this<Connector>
     void connect();
     bool checkConnect(int sockfd);
     void connecting(int sockfd);
-    void handleWrite();
-    void handleError();
+    void check_whether_connected();
+    void handle_err();
     void retry(int sockfd);
     int removeAndResetChannel();
     void resetChannel();
