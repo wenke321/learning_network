@@ -17,7 +17,7 @@
 
 Socket::Socket(int fd_) : fd(fd_) {}
 
-Socket::~Socket() { sockOption::close(fd); }
+Socket::~Socket() {}
 
 std::string Socket::get_addr() const
 {

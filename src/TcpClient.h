@@ -46,13 +46,13 @@ class TcpClient
     /// Not thread safe.
     void setWriteCompleteCallback(WriteCompleteCallback cb) { writeCompleteCallback_ = std::move(cb); }
 
+    void handle_sig_int();
+
    private:
     /// Not thread safe, but in loop
     void newConnection(int sockfd);
     /// Not thread safe, but in loop
     void removeConnection(TcpConnectionPtr conn);
-
-    void handle_sig_int();
 
     EventLoop* loop_;
     ConnectorPtr connector_;  // avoid revealing Connector
@@ -66,5 +66,4 @@ class TcpClient
     int nextConnId_;
     mutable MutexLock mutex_;
     TcpConnectionPtr connection_;
-    SignalHandler signal_handler;
 };

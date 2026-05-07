@@ -7,8 +7,8 @@
 #include <memory>
 #include <string>
 
-#include "CountDownLatch.h"
 #include "FileUtil.h"
+#include "Mutex.h"
 class LogFile
 {
    public:
@@ -19,24 +19,23 @@ class LogFile
     bool roll();
     void flush();
 
+    bool empty();
+
    private:
     void append_impl(const char* logs, int len);
 
     static std::string getLogFileName(const std::string& basename_, time_t& now);
 
-    int count;
-
     const std::string basename;
-    const unsigned int rollSize;
-    const int flushInterval;
-    const int checkInterval;
-
     const std::unique_ptr<MutexLock> mutex;
     time_t startOfPeriod;
     time_t lastRoll;
     time_t lastFlush;
 
     std::unique_ptr<AppendFile> file;
-
+    int count;
+    const unsigned int rollSize;
+    const int flushInterval;
+    const int checkInterval;
     const static int RollPerSeconds = 60 * 60 * 24;
 };

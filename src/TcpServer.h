@@ -59,13 +59,14 @@ class TcpServer
     /// Not thread safe.
     void setWriteCompleteCallback(const WriteCompleteCallback& cb) { writeCompleteCallback_ = cb; }
 
+    void removeConnection(TcpConnectionPtr conn);
+
    private:
     /// Not thread safe, but in loop
     void newConnection(int sockfd, const InetAddr* peerAddr);
 
-    void handle_signal();
+    void handle_sig_int();
     /// Thread safe.
-    void removeConnection(TcpConnectionPtr conn);
     /// Not thread safe, but in loop
     void removeConnectionInLoop(TcpConnectionPtr conn);
 

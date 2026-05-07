@@ -67,20 +67,21 @@ void Channel::HandleEvent_tied()
     {
         LOG_TRACE << " EPOLLERR";
         if (err_callback) err_callback();
+        return;
     }
 
     if (ready_events & EPOLLHUP)
     {
-        LOG_TRACE << " EPOLLHUP";
-        LOG_INFO << "channel close,fd=" << fd;
+        LOG_DEBUG << " EPOLLHUP,fd=" << fd;
         if (hup_callback) hup_callback();
         return;
     }
 
     if (ready_events & EPOLLRDHUP)
     {
-        LOG_DEBUG << " EPOLLRDHUP";
+        LOG_DEBUG << " EPOLLRDHUP,fd=" << fd;
         if (rdhup_callback) rdhup_callback();
+        return;
     }
 
     if (ready_events & EPOLLIN)
@@ -107,7 +108,7 @@ void Channel::HandleEvent_tied()
 
 void Channel::EnableRead()
 {
-    LOG_DEBUG << " fd=" << fd;
+    LOG_TRACE << " fd=" << fd;
     listen_events |= READ_EVENT;
     loop->updateChannel(this);
 }
@@ -121,14 +122,14 @@ void Channel::EnableWrite()
 
 void Channel::DisableRead()
 {
-    LOG_DEBUG << "fd=" << fd;
+    LOG_TRACE << "fd=" << fd;
     listen_events &= ~READ_EVENT;
     update();
 }
 
 void Channel::DisableWrite()
 {
-    LOG_DEBUG << " fd=" << fd;
+    LOG_TRACE << " fd=" << fd;
     listen_events &= ~WRITE_EVENT;
     update();
 }
@@ -206,3 +207,5 @@ void Channel::set_hup_callback(std::function<void()> callback)
     LOG_TRACE << " fd=" << fd;
     hup_callback = callback;
 }
+
+void Channel::set_rdhup_callback(std::function<void()> callback) { rdhup_callback = callback; }

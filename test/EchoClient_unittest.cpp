@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include <csignal>
+#include <cstddef>
+
 #include "AsyncLogger.h"
 #include "CurrentThread.h"
 #include "EventLoop.h"
@@ -27,6 +30,8 @@ class EchoClient
     void connect() { client_.connect(); }
     // void stop();
 
+    void a() { client_.handle_sig_int(); }
+
    private:
     void onConnection(const TcpConnectionPtr& conn)
     {
@@ -50,27 +55,37 @@ class EchoClient
         LOG_DEBUG << conn->name() << " recv " << msg.size() << " bytes :" << " " << msg;
         if (msg == "quit\n")
         {
-            conn->send("bye\n");
             conn->shutdown();
         }
         else if (msg == "shutdown\n")
         {
             loop_->quit_();
         }
-        else
-        {
-            // conn->send(msg);
-            conn->send("world\n");
-        }
+        // else
+        // {
+        //     // conn->send(msg);
+        //     conn->send("world\n");
+        // }
     }
 
     EventLoop* loop_;
     TcpClient client_;
 };
 
-AsyncLogger asyncLog("Client", 1024, 5);
+AsyncLogger asyncLog("Client", 10, 1);
+
+SignalHandler signal_handler;
 
 void logoutput(const char* logs, int len) { asyncLog.append(logs, len); }
+
+void handle_sig_int()
+{
+    LOG_DEBUG << " ";
+    for (size_t i = 0; i < clients.size(); i++)
+    {
+        clients[i]->a();
+    }
+}
 
 int main(int argc, char* argv[])
 {
@@ -99,6 +114,11 @@ int main(int argc, char* argv[])
         }
 
         clients[current]->connect();
+
+        signal_handler.init(&loop);
+        signal_handler.set_handle_int([&] { handle_sig_int(); });
+        signal(SIGPIPE, SIG_IGN);
+
         loop.Loop();
     }
     else

@@ -12,12 +12,14 @@
 #include "Logger.h"
 #include "SignalHandler.h"
 #include "TcpConnection.h"
+#include "helpers/builtins.h"
 
 TcpServer::TcpServer(EventLoop* loop, const InetAddr& listenAddr, const std::string& nameArg, Option option) : loop_(loop), ipPort_(listenAddr.ipPortStr()), name_(nameArg), threadPool_(new EventloopThreadPool(loop, name_)), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), nextConnId_(1), acceptor_(new Acceptor(loop, listenAddr, option == ReusePort)), signal_handler()
 {
     acceptor_->setNewConnectionCallback([=](int sockfd, const InetAddr* peerAddr_) { newConnection(sockfd, peerAddr_); });
 
-    signal_handler.init(loop_, [=] { handle_signal(); });
+    signal_handler.init(loop_);
+    signal_handler.set_handle_int([&] { handle_sig_int(); });
     signal(SIGPIPE, SIG_IGN);
 }
 
@@ -100,6 +102,7 @@ void TcpServer::removeConnectionInLoop(TcpConnectionPtr conn)
 {
     loop_->assertInLoopThread();
     LOG_INFO << "TcpServer::removeConnectionInLoop [" << name_ << "] - connection " << conn->name();
+    //_thread_fence_relaxed;
     size_t n = connections_.erase(conn->name());
     (void)n;
     assert(n == 1);
@@ -107,15 +110,15 @@ void TcpServer::removeConnectionInLoop(TcpConnectionPtr conn)
     // ioLoop->runInLoop([=] { conn->connectDestroyed(); });
 }
 
-void TcpServer::handle_signal()
+void TcpServer::handle_sig_int()
 {
     LOG_DEBUG << " ";
     acceptor_->stop();
     for (auto conn : connections_)
     {
         auto it = conn.second;
-        it->shutdown();
-        it->getLoop()->runInLoop([=] { it->connectDestroyed(); });
+        it->forceClose();
+        // connections_.erase(conn.first);
     }
 
     for (auto l : threadPool_->get_ioloops()) l->quit_();

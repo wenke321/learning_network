@@ -27,18 +27,19 @@ void defaultConnectionCallback(const TcpConnectionPtr& conn)
 
 void defaultMessageCallback(const TcpConnectionPtr&, Buffer* buf) { buf->retrieveAll(); }
 
-TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr) : loop_(loop), name_(nameArg), state_(kConnecting), reading_(true), socket_(new Socket(sockfd)), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
+TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr) : state_(Connecting), name_(nameArg), reading_(true), socket_(new Socket(sockfd)), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024), loop_(loop)
 {
     channel_ = loop_->add_channel(sockfd);
     channel_->set_in_callback([this] { handle_ep_in(); });
     channel_->set_out_callback([this] { handle_ep_out(); });
+    channel_->set_rdhup_callback([this] { handle_ep_rdhup(); });
     channel_->set_hup_callback([this] { handle_ep_hup(); });
     channel_->set_err_callback([this] { handle_ep_err(); });
     LOG_DEBUG << " TcpConnection::ctor[" << name_ << "] at " << this << " fd=" << sockfd;
     socket_->setKeepAlive(true);
 }
 
-TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr) : name_(name), state_(kConnecting), reading_(true), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
+TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr) : state_(Connecting), name_(name), reading_(true), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
 {
     channel_ = ch;
     loop_    = channel_->owner_loop();
@@ -46,6 +47,7 @@ TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAd
 
     channel_->set_in_callback([this] { handle_ep_in(); });
     channel_->set_out_callback([this] { handle_ep_out(); });
+    channel_->set_rdhup_callback([this] { handle_ep_rdhup(); });
     channel_->set_hup_callback([this] { handle_ep_hup(); });
     channel_->set_err_callback([this] { handle_ep_err(); });
     LOG_DEBUG << " TcpConnection::ctor[" << name_ << "] at " << this << " fd=" << channel_->fd_();
@@ -55,8 +57,17 @@ TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAd
 TcpConnection::~TcpConnection()
 {
     LOG_DEBUG << " TcpConnection::dtor[" << name_ << "] at " << this << " fd=" << channel_->fd_() << " state=" << stateToString();
-    assert(state_ == kDisconnected);
+    assert(state_ == Disconnected);
 }
+
+EventLoop* TcpConnection::getLoop() const { return loop_; }
+const std::string& TcpConnection::name() const { return name_; }
+
+const InetAddr* TcpConnection::localAddress() const { return localAddr_; }
+const InetAddr* TcpConnection::peerAddress() const { return peerAddr_; }
+
+bool TcpConnection::connected() const { return state_ == Connected; }
+bool TcpConnection::disconnected() const { return state_ == Disconnected; }
 
 bool TcpConnection::getTcpInfo(struct tcp_info* tcpi) const { return socket_->getTcpInfo(tcpi); }
 
@@ -73,7 +84,7 @@ void TcpConnection::send(const void* data, int len) { send(stringPiece(static_ca
 void TcpConnection::send(const stringPiece& message)
 {
     LOG_DEBUG << " ";
-    if (state_ == kConnected)
+    if (state_ == Connected)
     {
         if (loop_->isInLoopThread())
         {
@@ -91,7 +102,7 @@ void TcpConnection::send(const stringPiece& message)
 // FIXME efficiency!!!
 void TcpConnection::send(Buffer* buf)
 {
-    if (state_ == kConnected)
+    if (state_ == Connected)
     {
         if (loop_->isInLoopThread())
         {
@@ -116,7 +127,7 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
     ssize_t nwrote   = 0;
     size_t remaining = len;
     bool faultError  = false;
-    if (state_ == kDisconnected)
+    if (state_ == Disconnected)
     {
         LOG_WARN << "disconnected, give up writing";
         return;
@@ -166,19 +177,13 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
 void TcpConnection::shutdown()
 {
     // FIXME: use compare and swap
-    if (state_ == kConnected)
+    if (state_ == Connected)
     {
         LOG_INFO << "TcpConnection::shutdown,fd=" << channel_->fd_() << " local addr=" << localAddr_->ipPortStr();
-        setState(kDisconnecting);
+        setState(Disconnecting);
 
         loop_->runInLoop([conn_ = shared_from_this()] { conn_->shutdownInLoop(); });
     }
-}
-
-void TcpConnection::shutdown_write()
-{
-    LOG_DEBUG << " ";
-    handle_ep_rdhup();
 }
 
 void TcpConnection::shutdownInLoop()
@@ -187,7 +192,7 @@ void TcpConnection::shutdownInLoop()
     loop_->assertInLoopThread();
 
     // we are not writing
-    socket_->shutdown();
+    socket_->shutdownWrite();
 }
 
 // void TcpConnection::shutdownAndForceCloseAfter(double seconds)
@@ -217,18 +222,18 @@ void TcpConnection::shutdownInLoop()
 void TcpConnection::forceClose()
 {
     // FIXME: use compare and swap
-    if (state_ == kConnected || state_ == kDisconnecting)
+    if (state_ == Connected || state_ == Disconnecting)
     {
-        setState(kDisconnecting);
+        setState(Disconnecting);
         loop_->queueInLoop([conn = shared_from_this()] { conn->forceCloseInLoop(); });
     }
 }
 
 void TcpConnection::forceCloseWithDelay(double seconds)
 {
-    if (state_ == kConnected || state_ == kDisconnecting)
+    if (state_ == Connected || state_ == Disconnecting)
     {
-        setState(kDisconnecting);
+        setState(Disconnecting);
         // loop_->runAfter(seconds, makeWeakCallback(shared_from_this(),
         //                                           &TcpConnection::forceClose));
         Timer* timer = new Timer(Timestamp::now_microsecconds() + seconds * 1000000, [conn = shared_from_this()] { conn->forceCloseInLoop(); }, 0);
@@ -239,7 +244,7 @@ void TcpConnection::forceCloseWithDelay(double seconds)
 void TcpConnection::forceCloseInLoop()
 {
     loop_->assertInLoopThread();
-    if (state_ == kConnected || state_ == kDisconnecting)
+    if (state_ == Connected || state_ == Disconnecting)
     {
         // as if we received 0 byte in handleRead();
         handle_ep_hup();
@@ -250,14 +255,14 @@ const char* TcpConnection::stateToString() const
 {
     switch (state_)
     {
-        case kDisconnected:
-            return "kDisconnected";
-        case kConnecting:
-            return "kConnecting";
-        case kConnected:
-            return "kConnected";
-        case kDisconnecting:
-            return "kDisconnecting";
+        case Disconnected:
+            return "Disconnected";
+        case Connecting:
+            return "Connecting";
+        case Connected:
+            return "Connected";
+        case Disconnecting:
+            return "Disconnecting";
         default:
             return "unknown state";
     }
@@ -295,23 +300,19 @@ void TcpConnection::connectEstablished()
 {
     LOG_DEBUG << " ";
     loop_->assertInLoopThread();
-    assert(state_ == kConnecting);
-    setState(kConnected);
+    assert(state_ == Connecting);
+    setState(Connected);
     channel_->tie_(shared_from_this());
     channel_->EnableRead();
 
     connectionCallback_(shared_from_this());
 }
 
-void TcpConnection::connectDestroyed()
-{
-    LOG_DEBUG << " ";
-    handle_ep_hup();
-}
+void TcpConnection::connectDestroyed() { LOG_DEBUG << " "; }
 
 void TcpConnection::handle_ep_in()
 {
-    // LOG_DEBUG << " ";
+    LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString();
     loop_->assertInLoopThread();
     int savedErrno = 0;
     ssize_t n      = 0;
@@ -332,14 +333,16 @@ void TcpConnection::handle_ep_in()
         {
             if (savedErrno == EINTR)
                 continue;
-            else if (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK)
+            else if (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK || savedErrno == 0)
             {
                 break;
             }
             else
             {
-                LOG_SYSERR << "TcpConnection::handleRead,errno=" << savedErrno;
+                LOG_DEBUG << " errno=" << savedErrno << ",fd=" << channel_->fd_();
+                // LOG_SYSERR << "TcpConnection::handleRead," << "fd=" << channel_->fd_();
                 handle_ep_hup();
+                return;
             }
         }
     }
@@ -352,6 +355,7 @@ void TcpConnection::handle_ep_in()
 void TcpConnection::handle_ep_out()
 {
     loop_->assertInLoopThread();
+    LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString();
 
     if (outputBuffer_.readableBytes() == 0)
     {
@@ -399,7 +403,7 @@ void TcpConnection::handle_ep_out()
 
         if (rdhup_phrase)
         {
-            LOG_DEBUG << " ";
+            LOG_DEBUG << " rdhup_phrase";
             handle_ep_hup();
         }
     }
@@ -502,28 +506,26 @@ bool TcpConnection::finish_in_out()
 // EPOLLRDHUP
 void TcpConnection::handle_ep_rdhup()
 {
-    LOG_DEBUG << " ";
+    LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString();
     if (finish_in_out()) socket_->shutdownWrite();
 }
 
 // EPOLLHUP force close
 void TcpConnection::handle_ep_hup()
 {
-    LOG_DEBUG << " ";
     loop_->assertInLoopThread();
-    LOG_TRACE << "fd = " << channel_->fd_() << " state = " << stateToString();
+    LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString();
 
-    if (state_ == kConnected)
+    if (state_ == Connected || state_ == Disconnecting)
     {
-        socket_->shutdown();
         channel_->DisableAll();
         socket_->close();
-        setState(kDisconnected);
+        setState(Disconnected);
     }
-    // else
-    // {
-    //     LOG_ERROR << " TcpConnection::handle_ep_hup,state_=" << state_;
-    // }
+    else
+    {
+        LOG_DEBUG << " wrong state_=" << state_;
+    }
 
     closeCallback_(shared_from_this());
 }

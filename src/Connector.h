@@ -27,9 +27,9 @@ class Connector : public std::enable_shared_from_this<Connector>
    private:
     enum States
     {
-        Disconnected,
-        Connecting,
-        Connected
+        Disconnected = 1,
+        Connecting   = 2,
+        Connected    = 4
     };
     static const int MaxRetryDelayMs  = 30 * 1000;
     static const int InitRetryDelayMs = 500;

@@ -8,7 +8,6 @@
 #include "Mutex.h"
 #include "Timestamp.h"
 
-
 class EventLoop;
 
 class Poller
@@ -26,12 +25,12 @@ class Poller
 
     void assertInLoopThread();
 
-   protected:
-    std::unordered_map<int, Channel*> m_channels;
-
    private:
-    EventLoop* owner_loop;
+    friend class Epoller;
+
+    std::unordered_map<int, Channel*> m_channels;
     MutexLock mutex;
+    EventLoop* owner_loop;
 };
 
 class Epoller : public Poller
@@ -50,6 +49,6 @@ class Epoller : public Poller
     static const int initEventNum = 16;
     void update(int op, Channel*);
 
-    int epfd;
     std::vector<struct epoll_event> events;
+    int epfd;
 };

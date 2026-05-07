@@ -54,8 +54,8 @@ class EventLoop
     bool looping;
     bool eventHandling;
     bool callingPendingFunctors;
-    int wakeup_fd;
     const pid_t tid_;
+    int wakeup_fd;
     std::unique_ptr<Poller> epoller;
     Channel* wakeupChannel;
     std::vector<Channel*> activeChannels;

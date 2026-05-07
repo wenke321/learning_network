@@ -35,9 +35,9 @@ int createEventfd()
     return evfd;
 }
 
-EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), callingPendingFunctors(false), wakeup_fd(createEventfd()), tid_(CurrentThread::tid()), epoller(new Epoller(this)), wakeupChannel(add_channel(wakeup_fd)), cur_activeCh(NULL), timerQueue(std::make_unique<TimerQueue>(this))
+EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), callingPendingFunctors(false), wakeup_fd(createEventfd()), epoller(new Epoller(this)), wakeupChannel(add_channel(wakeup_fd)), cur_activeCh(NULL), timerQueue(std::make_unique<TimerQueue>(this)), tid_(CurrentThread::tid())
 {
-    LOG_DEBUG << "EventLoop created " << this << " in thread " << tid_;
+    LOG_INFO << "EventLoop created " << this << " in thread " << tid_;
     if (loopInThisThread)
     {
         LOG_FATAL << "Another EventLoop " << loopInThisThread << " exists in this thread " << tid_;
@@ -46,15 +46,11 @@ EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), call
     {
         loopInThisThread = this;
     }
-    wakeupChannel->set_in_callback([&] { handle_wakeup(); });
+    wakeupChannel->set_in_callback([=] { handle_wakeup(); });
     wakeupChannel->EnableRead();
 }
 
-EventLoop::~EventLoop()
-{
-    int err = errno;
-    LOG_DEBUG << " " << err;
-}
+EventLoop::~EventLoop() { LOG_DEBUG << " "; }
 
 bool EventLoop::isInLoopThread() { return tid_ == CurrentThread::tid(); }
 
@@ -70,7 +66,7 @@ void EventLoop::Loop()
     assert(!looping);
     assertInLoopThread();
     looping = true;
-    LOG_DEBUG << " start";
+    LOG_INFO << "start";
     while (!quit)
     {
         activeChannels.clear();
@@ -91,7 +87,8 @@ void EventLoop::Loop()
         LOG_TRACE << " do pendingFunctors";
         for (Functor f : pendingFunctors)
         {
-            if (f) f();
+            LOG_DEBUG << " this=" << &f;
+            f();
         }
         pendingFunctors.clear();
         callingPendingFunctors = false;
@@ -110,14 +107,11 @@ void EventLoop::quit_()
 
 void EventLoop::runInLoop(Functor cb)
 {
-    LOG_DEBUG << " ";
+    LOG_TRACE << " ";
     if (isInLoopThread())
         cb();
     else
-    {
         queueInLoop(cb);
-        wakeup();
-    }
 }
 
 void EventLoop::queueInLoop(Functor cb)
@@ -161,7 +155,7 @@ void EventLoop::cancelTimer(Timer* timer_)
 
 void EventLoop::wakeup()
 {
-    LOG_DEBUG << " eventfd=" << wakeup_fd;
+    LOG_TRACE << " eventfd=" << wakeup_fd;
     uint64_t byte = 1;
 
     int n = sockOption::write(wakeup_fd, &byte, sizeof(byte));
@@ -173,7 +167,7 @@ void EventLoop::wakeup()
 
 void EventLoop::handle_wakeup()
 {
-    LOG_DEBUG << " eventfd=" << wakeup_fd;
+    LOG_TRACE << " eventfd=" << wakeup_fd;
     uint64_t byte = 1;
 
     int n = sockOption::read(wakeup_fd, &byte, sizeof(byte));

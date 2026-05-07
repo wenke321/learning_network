@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include <cassert>
-#include <cstddef>
 
 #include "Channel.h"
 #include "EventLoop.h"
@@ -57,12 +56,15 @@ void Acceptor::handleRead()
     loop_->assertInLoopThread();
     InetAddr* peerAddr = new InetAddr;
 
+    int k = 0;
+
     while (1)
     {
         int connfd     = acceptSocket_.accept(peerAddr);
         int savedErrno = errno;
         if (connfd >= 0)
         {
+            ++k;
             LOG_TRACE << "new connection come";
             if (newConnectionCallback_)
             {
@@ -79,18 +81,19 @@ void Acceptor::handleRead()
             switch (savedErrno)
             {
                 case EAGAIN:
-                    break;
                 case ECONNABORTED:
                 case EPROTO:  // ???
                 case EINTR:
                 case EPERM:
+                case EMFILE:
+                    LOG_WARN << " EMFILE,per-process lmit of open file desctiptor";  // per-process lmit of open file desctiptor ???
                     // expected errors
-                    // errno = savedErrno;
+                    errno = savedErrno;
+                    break;
                 case EBADF:
                 case EFAULT:
                 case EINVAL:
                 case ENFILE:
-                case EMFILE:  // per-process lmit of open file desctiptor
                 case ENOBUFS:
                 case ENOMEM:
                 case ENOTSOCK:
@@ -103,6 +106,7 @@ void Acceptor::handleRead()
                     break;
             }
 
+            if (--k == -32) break;
             // LOG_SYSERR << "in Acceptor::handleRead";
             // // Read the section named "The special problem of
             // // accept()ing when you can't" in libev's doc.

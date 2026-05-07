@@ -100,12 +100,13 @@ void sockOption::close(int sockfd)
 {
     if (::close(sockfd) < 0)
     {
-        LOG_ERROR << "socket close,fd=" << sockfd;
+        LOG_ERROR << "::close,errno=" << errno << ",fd=" << sockfd;
     }
 }
 
 void sockOption::shutdownWrite(int sockfd)
 {
+    LOG_DEBUG << " ";
     if (::shutdown(sockfd, SHUT_WR) < 0)
     {
         LOG_ERROR << "SHUT_WR,fd=" << sockfd;
@@ -221,7 +222,10 @@ int sockOption::getSocketError(int sockfd)
 {
     int op;
     socklen_t l = static_cast<socklen_t>(sizeof(l));
-    if (::getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &op, &l) < 0) return errno;
+    if (::getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &op, &l) < 0)
+    {
+        LOG_ERROR << " ::getsockopt,errno=" << errno;
+    }
     return op;
 }
 

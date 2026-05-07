@@ -7,7 +7,7 @@
 #include "Channel.h"
 #include "EventLoop.h"
 #include "InetAddr.h"
-#include "Timestamp.h"
+#include "helpers/type_traits.h"
 
 class TcpConnection;
 typedef std::shared_ptr<TcpConnection> TcpConnectionPtr;
@@ -34,12 +34,14 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     explicit TcpConnection(Channel*&, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr);
     ~TcpConnection();
 
-    EventLoop* getLoop() const { return loop_; }
-    const std::string& name() const { return name_; }
-    const InetAddr* localAddress() const { return localAddr_; }
-    const InetAddr* peerAddress() const { return peerAddr_; }
-    bool connected() const { return state_ == kConnected; }
-    bool disconnected() const { return state_ == kDisconnected; }
+    EventLoop* getLoop() const;
+    const std::string& name() const;
+
+    const InetAddr* localAddress() const;
+    const InetAddr* peerAddress() const;
+
+    bool connected() const;
+    bool disconnected() const;
     // return true if success.
     bool getTcpInfo(struct tcp_info*) const;
     std::string getTcpInfoString() const;
@@ -72,6 +74,8 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
 
     void setWriteCompleteCallback(const WriteCompleteCallback& cb) { writeCompleteCallback_ = cb; }
 
+    void setCloseCallback(const CloseCallback& cb) { closeCallback_ = cb; }
+
     void setHighWaterMarkCallback(const HighWaterMarkCallback& cb, size_t highWaterMark)
     {
         highWaterMarkCallback_ = cb;
@@ -84,21 +88,46 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     Buffer* outputBuffer() { return &outputBuffer_; }
 
     /// Internal use only.
-    void setCloseCallback(const CloseCallback& cb) { closeCallback_ = cb; }
 
     // called when TcpServer accepts a new connection
     void connectEstablished();  // should be called only once
     // called when TcpServer has removed me from its map
     void connectDestroyed();  // should be called only once
 
-   private:
     enum StateE
     {
-        kDisconnected,
-        kConnecting,
-        kConnected,
-        kDisconnecting
+        Connecting    = 1,
+        Connected     = 2,
+        Disconnecting = 4,
+        Disconnected  = 8
     };
+
+   private:
+    Buffer inputBuffer_;
+    Buffer outputBuffer_;  // FIXME: use list<Buffer> as output buffer.
+
+    ConnectionCallback connectionCallback_;
+    MessageCallback messageCallback_;
+    WriteCompleteCallback writeCompleteCallback_;
+    HighWaterMarkCallback highWaterMarkCallback_;
+    CloseCallback closeCallback_;
+
+    volatile atomic_int state_;
+
+    char pad2[cache_line_size - sizeof(state_)];
+
+    const std::string name_;
+
+    bool reading_;
+    bool rdhup_phrase;
+
+    std::unique_ptr<Socket> socket_;
+    Channel* channel_;
+    const InetAddr* localAddr_;
+    const InetAddr* peerAddr_;
+
+    size_t highWaterMark_;
+
     void handle_ep_pri();
     void handle_ep_in();
     void handle_ep_out();
@@ -106,36 +135,22 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     void handle_ep_rdhup();
     void handle_ep_hup();
     void handle_ep_err();
+
     // void sendInLoop(string&& message);
     void sendInLoop(const stringPiece& message);
     void sendInLoop(const void* message, size_t len);
+
     void shutdownInLoop();
     // void shutdownAndForceCloseInLoop(double seconds);
     void forceCloseInLoop();
+
     void setState(StateE s) { state_ = s; }
     const char* stateToString() const;
+
     void startReadInLoop();
     void stopReadInLoop();
 
     EventLoop* loop_;
-    const std::string name_;
-    StateE state_;  // FIXME: use atomic variable
-    bool reading_;
-    bool rdhup_phrase;
-    // we don't expose those classes to client.
-    std::unique_ptr<Socket> socket_;
-    Channel* channel_;
-    const InetAddr* localAddr_;
-    const InetAddr* peerAddr_;
-    ConnectionCallback connectionCallback_;
-    MessageCallback messageCallback_;
-    WriteCompleteCallback writeCompleteCallback_;
-    HighWaterMarkCallback highWaterMarkCallback_;
-    //(&connection)
-    CloseCallback closeCallback_;
-    size_t highWaterMark_;
-    Buffer inputBuffer_;
-    Buffer outputBuffer_;  // FIXME: use list<Buffer> as output buffer.
 
     //  FIXME: creationTime_, lastReceiveTime_
     //         bytesReceived_, bytesSent_

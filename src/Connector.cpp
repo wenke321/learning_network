@@ -68,9 +68,9 @@ void Connector::connect()
     {
         case 0:
         case EINPROGRESS:
-            // LOG_INFO << "EINPROGRESS,may succeed";
         case EINTR:
         case EISCONN:
+            LOG_DEBUG << " expected errno,may succeed,fd=" << ret;
             connecting(serverfd);
             break;
 
@@ -111,19 +111,14 @@ void Connector::restart()
 
 void Connector::connecting(int serverfd)
 {
-    // if (!checkConnect(serverfd)) retry(serverfd);
+    LOG_DEBUG << " fd=" << serverfd;
+    assert(!channel_);
     setState(Connecting);
-    // assert(!channel_);
-    if (!channel_)
-    {
-        channel_ = loop_->add_channel(serverfd);
-        channel_->set_out_callback([this] { check_whether_connected(); });
-        channel_->set_err_callback([this] { handle_err(); });
-        channel_->EnableWrite();
-    }
-    else
-    {
-    }
+
+    channel_ = loop_->add_channel(serverfd);
+    channel_->set_out_callback([this] { check_whether_connected(); });
+    channel_->set_err_callback([this] { handle_err(); });
+    channel_->EnableWrite();
 }
 
 int Connector::removeAndResetChannel()
@@ -137,7 +132,7 @@ void Connector::resetChannel() { channel_ = nullptr; }
 
 void Connector::check_whether_connected()
 {
-    LOG_TRACE << " Connector::handleWrite " << state_;
+    LOG_TRACE << " Connector::check_whether_connected,state_=" << state_;
 
     if (state_ == Connecting)
     {
@@ -146,17 +141,17 @@ void Connector::check_whether_connected()
         int err = sockOption::getSocketError(fd);
         if (err)
         {
-            LOG_WARN << "Connector::handleWrite - SO_ERROR = " << err << " " << strerrorInfo(err);
+            LOG_WARN << "Connector::check_whether_connected - SO_ERROR = " << err << " " << strerrorInfo(err);
             retry(fd);
         }
         else if (sockOption::isSelfConnect(fd))
         {
-            LOG_WARN << "Connector::handleWrite - Self connect";
+            LOG_WARN << "Connector::check_whether_connected - Self connect";
             retry(fd);
         }
         else
         {
-            LOG_TRACE << "connect established";
+            LOG_DEBUG << " connect established,fd=" << fd;
             setState(Connected);
             channel_->reset_listen_events();
             if (connect_)
@@ -172,7 +167,7 @@ void Connector::check_whether_connected()
     }
     else
     {
-        LOG_ERROR << "Connector::handleWrite,error don't know";
+        LOG_ERROR << "Connector::check_whether_connected,error don't know";
         assert(state_ == Disconnected);
     }
 }

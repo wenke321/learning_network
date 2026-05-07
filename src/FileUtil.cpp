@@ -8,8 +8,9 @@
 
 #include "Logger.h"
 
-AppendFile::AppendFile(const std::string& filename_) : fd(::fopen(filename_.c_str(), "ae")), writtenBytes(0)
+AppendFile::AppendFile(const std::string& _filename) : writtenBytes(0)
 {
+    fd = ::fopen(_filename.c_str(), "ae");
     assert(fd);
     ::setbuffer(fd, buffer, sizeof(buffer));
 }

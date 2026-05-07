@@ -13,6 +13,8 @@ LogFile::LogFile(const std::string& basename_, unsigned int rollSize_, int flush
     roll();
 }
 
+bool LogFile::empty() { return file->writtenBytes_() == 0; }
+
 void LogFile::append(const char* logs, int len)
 {
     if (mutex)

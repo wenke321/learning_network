@@ -53,7 +53,7 @@ inline LogStream& operator<<(LogStream& s, const Logger::SourceFile& file)
     return s;
 }
 
-void defaultOutput(const char* msg, int len) { size_t n = fwrite(msg, 1, len, stdout); }
+void defaultOutput(const char* msg, int len) { size_t n = ::fwrite(msg, 1, len, stdout); }
 
 void defaultFlush() { fflush(stdout); }
 

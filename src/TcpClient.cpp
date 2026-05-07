@@ -37,9 +37,6 @@ TcpClient::TcpClient(EventLoop* loop, const InetAddr& serverAddr, const std::str
     connector_->setNewConnectionCallback([this](int fd) { newConnection(fd); });
     // FIXME setConnectFailedCallback
     LOG_INFO << "TcpClient::TcpClient[" << name_ << "] - connector " << connector_.get();
-
-    signal_handler.init(loop, [&] { handle_sig_int(); });
-    signal(SIGPIPE, SIG_IGN);
 }
 
 TcpClient::~TcpClient()
@@ -133,11 +130,16 @@ void TcpClient::removeConnection(TcpConnectionPtr conn)
 
     {
         MutexLockGuard lock(mutex_);
-        if (connection_) assert(connection_ == conn);
+        if (connection_)
+            assert(connection_ == conn);
+        else
+        {
+            LOG_ERROR << " TcpClient::removeConnection,connection_=null,should never happen";
+        }
         connection_.reset();
     }
 
-    loop_->queueInLoop([conn_ = conn] { conn_->connectDestroyed(); });
+    loop_->runInLoop([conn_ = conn] { conn_->connectDestroyed(); });
     if (retry_ && connect_)
     {
         LOG_INFO << "TcpClient::connect[" << name_ << "] - Reconnecting to " << connector_->serverAddress().ipPortStr();
@@ -147,9 +149,11 @@ void TcpClient::removeConnection(TcpConnectionPtr conn)
 
 void TcpClient::handle_sig_int()
 {
+    LOG_DEBUG << " ";
     if (connection_)
     {
-        connection_->shutdown_write();
+        LOG_DEBUG << " ";
+        connection_->shutdown();
     }
     connect_ = false;
     // loop_->quit_();
