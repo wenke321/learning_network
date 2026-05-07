@@ -189,6 +189,7 @@ void Connector::retry(int serverfd)
     LOG_TRACE << "retry connect,fd=" << serverfd;
     sockOption::close(serverfd);
     setState(Disconnected);
+    delete channel_;
     if (connect_)
     {
         LOG_INFO << "Connector::retry - Retry connecting to " << serverAddr_.ipPortStr() << " in " << retryDelayMs_ << " milliseconds. ";
