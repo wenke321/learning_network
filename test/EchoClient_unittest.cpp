@@ -46,7 +46,7 @@ class EchoClient
             }
             LOG_INFO << "*** connected " << current;
         }
-        // conn->send("world\n");
+        conn->send("exit\n");
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)

@@ -80,13 +80,13 @@ void Acceptor::handleRead()
         {
             switch (savedErrno)
             {
+                case EMFILE:
+                    LOG_WARN << " EMFILE,per-process lmit of open file desctiptor";  // per-process lmit of open file desctiptor ???
                 case EAGAIN:
                 case ECONNABORTED:
                 case EPROTO:  // ???
                 case EINTR:
                 case EPERM:
-                case EMFILE:
-                    LOG_WARN << " EMFILE,per-process lmit of open file desctiptor";  // per-process lmit of open file desctiptor ???
                     // expected errors
                     errno = savedErrno;
                     break;

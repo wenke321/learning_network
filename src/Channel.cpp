@@ -174,8 +174,22 @@ void Channel::set_ready_event(int ev)
 void Channel::tie_(std::shared_ptr<void> obj)
 {
     LOG_TRACE << " fd=" << fd;
-    tiedObj = obj;
-    tied    = true;
+    if (obj)
+    {
+        tiedObj = obj;
+        tied    = true;
+    }
+    else
+    {
+        LOG_ERROR << "Channel::tie_ failed,should never happen";
+    }
+}
+
+void Channel::untie()
+{
+    LOG_DEBUG << " ";
+    tiedObj.reset();
+    tied = false;
 }
 
 void Channel::set_pri_callback(std::function<void()> callback)

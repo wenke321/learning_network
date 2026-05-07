@@ -94,7 +94,7 @@ int sockOption::accept(int sockfd, struct sockaddr_in* addr)
     // return connfd;
 }
 ssize_t sockOption::read(int sockfd, void* buf, size_t count) { return ::read(sockfd, buf, count); }
-ssize_t sockOption::readv(int sockfd, const struct iovec* iov, int iovcnt) { return readv(sockfd, iov, iovcnt); }
+// ssize_t sockOption::readv(int sockfd, const struct iovec* iov, int iovcnt) { return readv(sockfd, iov, iovcnt); }
 ssize_t sockOption::write(int sockfd, const void* buf, size_t count) { return ::write(sockfd, buf, count); }
 void sockOption::close(int sockfd)
 {

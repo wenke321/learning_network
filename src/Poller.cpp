@@ -11,7 +11,7 @@
 
 #define InitEventNum 1000
 
-Poller::Poller(EventLoop* loop_) : owner_loop(loop_), mutex() {}
+Poller::Poller(EventLoop* loop_) : mutex(), owner_loop(loop_) {}
 Poller::~Poller()
 {
     LOG_DEBUG << " ";
@@ -66,7 +66,7 @@ Epoller::Epoller(EventLoop* _loop) : Poller(_loop), events(initEventNum), epfd(:
 {
     if (epfd < 0)
     {
-        LOG_ERROR << "::epoll_create1 failed!!!";
+        LOG_SYSERR << "::epoll_create1 failed!!!";
     }
 }
 
@@ -91,7 +91,7 @@ Timestamp Epoller::Poll(int timeout, std::vector<Channel*>& activeChannels_)
     {
         if (err != EINTR)
         {
-            LOG_ERROR << "Epoller::Poll error";
+            LOG_SYSERR << "Epoller::Poll error";
         }
     }
 
@@ -146,6 +146,7 @@ void Epoller::updateChannel(Channel* ch)
         if (ch->listen_events_() == 0)
         {
             ch->setIndex(Channel::ch_deleted);
+            ch->untie();
             update(EPOLL_CTL_DEL, ch);
         }
         else

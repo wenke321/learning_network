@@ -15,6 +15,7 @@
 #include "Channel.h"
 #include "Logger.h"
 #include "Socket.h"
+#include "SocketOps.h"
 #include "Timer.h"
 #include "Timestamp.h"
 #include "WeakCallback.h"
@@ -83,7 +84,7 @@ void TcpConnection::send(const void* data, int len) { send(stringPiece(static_ca
 
 void TcpConnection::send(const stringPiece& message)
 {
-    LOG_DEBUG << " ";
+    LOG_DEBUG << " fd=" << channel_->fd_();
     if (state_ == Connected)
     {
         if (loop_->isInLoopThread())
@@ -96,6 +97,10 @@ void TcpConnection::send(const stringPiece& message)
             loop_->runInLoop([=] { sendInLoop(message); });
             // std::forward<string>(message)));
         }
+    }
+    else
+    {
+        LOG_DEBUG << " wrong state_=" << state_ << ",should sync";
     }
 }
 
@@ -117,6 +122,10 @@ void TcpConnection::send(Buffer* buf)
             // std::forward<string>(message)));
         }
     }
+    else
+    {
+        LOG_DEBUG << " wrong state_=" << state_ << ",should sync";
+    }
 }
 
 void TcpConnection::sendInLoop(const stringPiece& message) { sendInLoop(message.data(), message.size()); }
@@ -124,6 +133,7 @@ void TcpConnection::sendInLoop(const stringPiece& message) { sendInLoop(message.
 void TcpConnection::sendInLoop(const void* data, size_t len)
 {
     loop_->assertInLoopThread();
+    LOG_DEBUG << " fd=" << channel_->fd_();
     ssize_t nwrote   = 0;
     size_t remaining = len;
     bool faultError  = false;
@@ -135,31 +145,38 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
     // if no thing in output queue, try writing directly
     if (!channel_->isWriting() && outputBuffer_.readableBytes() == 0)
     {
-        nwrote = sockOption::write(channel_->fd_(), data, len);
-        if (nwrote >= 0)
+        while (remaining)
         {
-            remaining = len - nwrote;
-            if (remaining == 0 && writeCompleteCallback_)
+            nwrote = sockOption::write(channel_->fd_(), data, len);
+            if (nwrote >= 0)
             {
-                loop_->queueInLoop([this] { writeCompleteCallback_(shared_from_this()); });
-            }
-        }
-        else  // nwrote < 0
-        {
-            nwrote = 0;
-            if (errno != EWOULDBLOCK)
-            {
-                LOG_SYSERR << "TcpConnection::sendInLoop";
-                if (errno == EPIPE || errno == ECONNRESET)  // FIXME: any others?
+                remaining = len - nwrote;
+                if (remaining == 0 && writeCompleteCallback_)
                 {
+                    loop_->queueInLoop([this] { writeCompleteCallback_(shared_from_this()); });
+                }
+            }
+            else  // nwrote < 0
+            {
+                int err = sockOption::getSocketError(channel_->fd_());
+                if (err == EAGAIN)
+                {
+                    break;
+                }
+                else if (err == EINTR)
+                    continue;
+                else
+                {
+                    LOG_SYSERR << "TcpConnection::sendInLoop," << " SO_ERROR = " << err << " " << strerrorInfo(err);
                     faultError = true;
+                    break;
                 }
             }
         }
     }
 
     assert(remaining <= len);
-    if (!faultError && remaining > 0)
+    if (!faultError && remaining > 0)  // EAGAIN
     {
         size_t oldLen = outputBuffer_.readableBytes();
         if (oldLen + remaining >= highWaterMark_ && oldLen < highWaterMark_ && highWaterMarkCallback_)
@@ -176,19 +193,24 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
 
 void TcpConnection::shutdown()
 {
+    LOG_DEBUG << " fd=" << channel_->fd_();
     // FIXME: use compare and swap
     if (state_ == Connected)
     {
         LOG_INFO << "TcpConnection::shutdown,fd=" << channel_->fd_() << " local addr=" << localAddr_->ipPortStr();
         setState(Disconnecting);
 
-        loop_->runInLoop([conn_ = shared_from_this()] { conn_->shutdownInLoop(); });
+        loop_->queueInLoop([conn_ = shared_from_this()] { conn_->shutdownInLoop(); });
+    }
+    else
+    {
+        LOG_DEBUG << " wrong state_=" << state_ << ",should sync";
     }
 }
 
 void TcpConnection::shutdownInLoop()
 {
-    LOG_DEBUG << " ";
+    LOG_DEBUG << " fd=" << channel_->fd_();
     loop_->assertInLoopThread();
 
     // we are not writing
@@ -221,16 +243,22 @@ void TcpConnection::shutdownInLoop()
 
 void TcpConnection::forceClose()
 {
+    LOG_DEBUG << " fd=" << channel_->fd_();
     // FIXME: use compare and swap
     if (state_ == Connected || state_ == Disconnecting)
     {
         setState(Disconnecting);
         loop_->queueInLoop([conn = shared_from_this()] { conn->forceCloseInLoop(); });
     }
+    else
+    {
+        LOG_DEBUG << " wrong state_=" << state_ << ",should sync";
+    }
 }
 
 void TcpConnection::forceCloseWithDelay(double seconds)
 {
+    LOG_DEBUG << " fd=" << channel_->fd_();
     if (state_ == Connected || state_ == Disconnecting)
     {
         setState(Disconnecting);
@@ -239,15 +267,24 @@ void TcpConnection::forceCloseWithDelay(double seconds)
         Timer* timer = new Timer(Timestamp::now_microsecconds() + seconds * 1000000, [conn = shared_from_this()] { conn->forceCloseInLoop(); }, 0);
         loop_->addTimer(timer);
     }
+    else
+    {
+        LOG_DEBUG << " wrong state_=" << state_ << ",should sync";
+    }
 }
 
 void TcpConnection::forceCloseInLoop()
 {
+    LOG_DEBUG << " fd=" << channel_->fd_();
     loop_->assertInLoopThread();
     if (state_ == Connected || state_ == Disconnecting)
     {
         // as if we received 0 byte in handleRead();
         handle_ep_hup();
+    }
+    else
+    {
+        LOG_DEBUG << " wrong state_=" << state_ << ",should sync";
     }
 }
 
@@ -298,7 +335,7 @@ void TcpConnection::stopReadInLoop()
 
 void TcpConnection::connectEstablished()
 {
-    LOG_DEBUG << " ";
+    LOG_DEBUG << " fd=" << channel_->fd_();
     loop_->assertInLoopThread();
     assert(state_ == Connecting);
     setState(Connected);
@@ -308,7 +345,7 @@ void TcpConnection::connectEstablished()
     connectionCallback_(shared_from_this());
 }
 
-void TcpConnection::connectDestroyed() { LOG_DEBUG << " "; }
+void TcpConnection::connectDestroyed() { assert(state_ == Disconnected); }
 
 void TcpConnection::handle_ep_in()
 {
@@ -368,20 +405,25 @@ void TcpConnection::handle_ep_out()
     {
         if (channel_->isWriting())
         {
-            written   = true;
             ssize_t n = sockOption::write(channel_->fd_(), outputBuffer_.readBegin(), outputBuffer_.readableBytes());
-            int err   = errno;
             if (n > 0)
             {
+                written = true;
                 outputBuffer_.retrieve(n);
             }
-            else if (err == EAGAIN || err == EWOULDBLOCK)
-                return;
             else
             {
-                LOG_SYSERR << "TcpConnection::handleWrite";
-                handle_ep_hup();
-                break;
+                int err = sockOption::getSocketError(channel_->fd_());
+                if (err == EAGAIN)
+                    return;
+                else if (err == EINTR)
+                    continue;
+                else
+                {
+                    LOG_SYSERR << "TcpConnection::handleWrite," << " SO_ERROR = " << err << " " << strerrorInfo(err);
+                    handle_ep_hup();
+                    break;
+                }
             }
         }
         else
@@ -444,7 +486,6 @@ bool TcpConnection::finish_in_out()
                 handle_ep_hup();
                 return false;
             }
-            break;
         }
     }
     if (n > 0)
@@ -453,51 +494,46 @@ bool TcpConnection::finish_in_out()
     }
 
     //
-    channel_->EnableWrite();
     if (outputBuffer_.readableBytes() == 0)
     {
-        channel_->DisableWrite();
         return true;
     }
 
-    bool written = false;
-    while (outputBuffer_.readableBytes())
+    int remain = outputBuffer_.readableBytes();
+    while (remain)
     {
-        if (channel_->isWriting())
+        n = sockOption::write(channel_->fd_(), outputBuffer_.readBegin(), outputBuffer_.readableBytes());
+        if (n > 0)
         {
-            written = true;
-            n       = sockOption::write(channel_->fd_(), outputBuffer_.readBegin(), outputBuffer_.readableBytes());
-            int err = sockOption::getSocketError(channel_->fd_());
-            if (n > 0)
-            {
-                outputBuffer_.retrieve(n);
-            }
-            // don't continue,will spin;wait for left EPOLLOUT,EPOLLHUP at the end
-            else if (err == EAGAIN || err == EWOULDBLOCK)
-                return false;
-            else
-            {
-                // completely break;
-                LOG_SYSERR << "TcpConnection::finish_in_out";
-                handle_ep_hup();
-                rdhup_phrase = true;
-                return false;
-            }
+            remain -= n;
+            outputBuffer_.retrieve(n);
         }
         else
         {
-            LOG_SYSERR << " TcpConnection::finish_in_out,unexpected errno,Connection fd = " << channel_->fd_() << " is down, no more writing";
-            return true;
+            int err = sockOption::getSocketError(channel_->fd_());
+            if (err == EINTR) continue;
+
+            // wait for EPOLLHUP at the end
+            else if (err == EAGAIN || err == EWOULDBLOCK)
+            {
+                channel_->EnableWrite();
+                return false;
+            }
+
+            else
+            {
+                // completely break;
+                LOG_SYSERR << " TcpConnection::finish_in_out";
+                handle_ep_hup();
+                return false;
+            }
         }
     }
 
-    if (outputBuffer_.readableBytes() == 0 && written)
+    if (!channel_->isWriting()) channel_->DisableWrite();
+    if (writeCompleteCallback_)
     {
-        channel_->DisableWrite();
-        if (writeCompleteCallback_)
-        {
-            writeCompleteCallback_(shared_from_this());
-        }
+        writeCompleteCallback_(shared_from_this());
     }
 
     return true;
@@ -507,7 +543,15 @@ bool TcpConnection::finish_in_out()
 void TcpConnection::handle_ep_rdhup()
 {
     LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString();
-    if (finish_in_out()) socket_->shutdownWrite();
+    if (state_ == Connected)
+    {
+        rdhup_phrase = true;
+        if (finish_in_out()) socket_->shutdownWrite();
+    }
+    else
+    {
+        LOG_DEBUG << " wrong state_=" << state_ << ",should sync";
+    }
 }
 
 // EPOLLHUP force close
@@ -524,7 +568,7 @@ void TcpConnection::handle_ep_hup()
     }
     else
     {
-        LOG_DEBUG << " wrong state_=" << state_;
+        LOG_DEBUG << " wrong state_=" << state_ << ",should sync";
     }
 
     closeCallback_(shared_from_this());

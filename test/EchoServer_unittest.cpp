@@ -41,7 +41,7 @@ class EchoServer
         LOG_TRACE << conn->peerAddress()->ipPortStr() << " -> " << conn->localAddress()->ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
         // LOG_INFO << conn->getTcpInfoString();
 
-        conn->send("quit\n");
+        // conn->send("quit\n");
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)

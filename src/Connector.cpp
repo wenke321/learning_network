@@ -70,7 +70,7 @@ void Connector::connect()
         case EINPROGRESS:
         case EINTR:
         case EISCONN:
-            LOG_DEBUG << " expected errno,may succeed,fd=" << ret;
+            LOG_DEBUG << " expected errno,may succeed";
             connecting(serverfd);
             break;
 
