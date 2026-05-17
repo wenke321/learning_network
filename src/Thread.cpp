@@ -12,6 +12,8 @@
 #include <cstdio>
 #include <string>
 
+#include "Logger.h"
+
 pid_t gettid() { return static_cast<pid_t>(::syscall(SYS_gettid)); }
 
 void CurrentThread::cache_Tid()
@@ -52,10 +54,9 @@ struct ThreadData
         {
             CurrentThread::Tname = "crashed";
             int err              = errno;
-            fprintf(stderr, "exception caught in Thread %s\n", name_.c_str());
-            fprintf(stderr, "reason: %s\n", ex.what());
-            fprintf(stderr, "errno: %d\n", err);
-            abort();
+            {
+                LOG_SYSFATAL << "exception caught in Thread : " << name_.c_str() << "\n" << "reason : " << ex.what() << "\n" << "errno : " << err;
+            }
         }
         catch (...)
         {

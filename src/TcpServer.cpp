@@ -18,8 +18,8 @@ TcpServer::TcpServer(EventLoop* loop, const InetAddr& listenAddr, const std::str
 {
     acceptor_->setNewConnectionCallback([=](int sockfd, const InetAddr* peerAddr_) { newConnection(sockfd, peerAddr_); });
 
-    signal_handler.init(loop_);
     signal_handler.set_handle_int([&] { handle_sig_int(); });
+    signal_handler.init(loop_);
     signal(SIGPIPE, SIG_IGN);
 }
 
@@ -28,11 +28,9 @@ TcpServer::~TcpServer()
     loop_->assertInLoopThread();
     LOG_TRACE << "TcpServer::~TcpServer [" << name_ << "] destructing";
 
-    for (auto& item : connections_)
+    if (!connections_.empty())
     {
-        TcpConnectionPtr conn(item.second);
-        item.second.reset();
-        conn->getLoop()->runInLoop([=] { conn->connectDestroyed(); });
+        LOG_FATAL << " why you didn't close all connections before here ?";
     }
 }
 
@@ -47,14 +45,6 @@ void TcpServer::start()
     if (started_ == 0)
     {
         threadPool_->start(threadInitCallback_);
-
-        Channel* ch = signal_handler.get_ch();
-        for (auto l : threadPool_->get_ioloops())
-        {
-            // l->runInLoop([&] { l->add_channel(ch); });
-            ch->setIndex(Channel::ch_extern);
-            l->add_channel(ch);
-        }
 
         assert(!acceptor_->listening());
         loop_->runInLoop([this] { acceptor_->listen(); });
@@ -71,26 +61,22 @@ void TcpServer::newConnection(int sockfd, const InetAddr* peerAddr)
     ++nextConnId_;
     std::string connName = name_ + buf;
 
-    LOG_INFO << "TcpServer::newConnection [" << name_ << "] - new connection [" << connName << "] from " << peerAddr->ipPortStr();
+    {
+        LOG_INFO << "TcpServer::newConnection [" << name_ << "] - new connection [" << connName << "] from " << peerAddr->ipPortStr();
+    }
     // FIXME poll with zero timeout to double confirm the new connection
     // FIXME use make_shared if necessary
-    InetAddr* localAddr = new InetAddr(sockOption::getLocalAddr(sockfd));
-    ioLoop->runInLoop(
-        [=]
-        {
-            TcpConnectionPtr conn = std::make_shared<TcpConnection>(ioLoop, connName, sockfd, localAddr, peerAddr);
+    InetAddr* localAddr   = new InetAddr(sockOption::getLocalAddr(sockfd));
+    TcpConnectionPtr conn = std::make_shared<TcpConnection>(ioLoop, connName, sockfd, localAddr, peerAddr);
+    conn->setConnectionCallback(connectionCallback_);
+    conn->setMessageCallback(messageCallback_);
+    conn->setWriteCompleteCallback(writeCompleteCallback_);
+    conn->setCloseCallback([this](TcpConnectionPtr _conn) { removeConnection(_conn); });
 
-            conn->setConnectionCallback(connectionCallback_);
-            conn->setMessageCallback(messageCallback_);
-            conn->setWriteCompleteCallback(writeCompleteCallback_);
-            conn->setCloseCallback([this](TcpConnectionPtr _conn) { removeConnection(_conn); });
-            loop_->runInLoop(
-                [=]
-                {
-                    connections_[connName] = conn;
-                    conn->connectEstablished();
-                });
-        });
+    connections_[connName] = conn;
+
+    // sync
+    ioLoop->runInLoop([=] { conn->connectEstablished(); });
 }
 
 void TcpServer::removeConnection(TcpConnectionPtr conn)
@@ -104,6 +90,10 @@ void TcpServer::removeConnectionInLoop(TcpConnectionPtr conn)
     LOG_INFO << "TcpServer::removeConnectionInLoop [" << name_ << "] - connection " << conn->name();
     //_thread_fence_relaxed;
     size_t n = connections_.erase(conn->name());
+    // if (n != 1)
+    // {
+    //     LOG_DEBUG << " fd=" << conn->get_fd() << ",n=" << n;
+    // }
     (void)n;
     assert(n == 1);
     // EventLoop* ioLoop = conn->getLoop();
@@ -118,9 +108,9 @@ void TcpServer::handle_sig_int()
     {
         auto it = conn.second;
         it->forceClose();
-        // connections_.erase(conn.first);
+        connections_.erase(conn.first);
     }
 
-    for (auto l : threadPool_->get_ioloops()) l->quit_();
+    threadPool_->stop();
     loop_->runInLoop([=] { loop_->quit_(); });
 }

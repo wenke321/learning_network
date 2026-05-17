@@ -14,7 +14,9 @@ EventloopThread::EventloopThread(const std::string& name_, ThreadInitCallback cb
 
 EventloopThread::~EventloopThread()
 {
-    LOG_DEBUG << " ";
+    {
+        LOG_DEBUG << " loop will quit";
+    }
     exiting = true;
     if (loop != nullptr)
     {
@@ -59,7 +61,9 @@ void EventloopThread::threadFunc()
     loop_.Loop();
 
     int err = errno;
-    LOG_DEBUG << " errno=" << err;
+    {
+        LOG_DEBUG << " errno=" << err;
+    }
 
     MutexLockGuard lock(mutex);
     loop = nullptr;

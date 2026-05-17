@@ -4,10 +4,16 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#include <cstddef>
+
 #include "Logger.h"
 #include "ThreadPool.h"
+#include "Timestamp.h"
 
 off_t kRollSize = 500 * 1000 * 1000;
+
+__thread double start = 0;
+__thread double end   = 0;
 
 AsyncLogger* g_asyncLog = NULL;
 
@@ -20,19 +26,19 @@ void bench(bool longLog)
     int cnt           = 0;
     const int kBatch  = 1000;
     std::string empty = " ";
-    std::string longStr(3000, 'X');
+    std::string longStr(1000, 'X');
     longStr += " ";
 
     for (int t = 0; t < 30; ++t)
     {
-        Timestamp start = Timestamp::now();
+        start = Timestamp::now_microsecconds();
         for (int i = 0; i < kBatch; ++i)
         {
             LOG_INFO << "Hello 0123456789" << " abcdefghijklmnopqrstuvwxyz " << (longLog ? longStr : empty);
             ++cnt;
         }
-        Timestamp end = Timestamp::now();
-        printf("%f\n", timeDifference(end, start) * 1000000 / kBatch);
+        end = Timestamp::now_microsecconds();
+        printf("%f\n", (end - start) / 1000000 / kBatch);
         // struct timespec ts = {0, 500 * 1000 * 1000};
         // nanosleep(&ts, NULL);
     }

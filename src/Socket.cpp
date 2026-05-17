@@ -63,7 +63,11 @@ int Socket::accept(InetAddr* peerAddr) const
 void Socket::shutdownWrite() { sockOption::shutdownWrite(fd); }
 void Socket::shutdown() { sockOption::shutdown(fd); }
 
-void Socket::close() { sockOption::close(fd); }
+void Socket::close()
+{
+    sockOption::close(fd);
+    fd = -1;
+}
 
 void Socket::setTcpNoDelay(bool on) { sockOption::setTcpNoDelay(on, fd); }
 void Socket::setReuseAddr(bool on) { sockOption::setReuseAddr(on, fd); }

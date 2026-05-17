@@ -1,6 +1,7 @@
 #include "AsyncLogger.h"
 
 #include <cassert>
+#include <climits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -9,6 +10,8 @@
 #include "LogFile.h"
 #include "Logger.h"
 #include "Thread.h"
+#include "helpers/builtins.h"
+#include "helpers/kw_micros.h"
 
 AsyncLogger::AsyncLogger(const std::string& basename_, off_t rollSize_, int flushInterval_) : running(0), rollSize(rollSize_), flushInterval(flushInterval_), basename(basename_), thread([&] { threadFunc(); }, "Logging"), mutex(), cond(mutex), latch(1)
 {
@@ -35,16 +38,62 @@ void AsyncLogger::start()
 void AsyncLogger::stop()
 {
     running = false;
-    cond.notify();
+
+    for (;;)
+    {
+        atomic_ulong old_state = _load_acquire(&state);
+
+        if (!(old_state & available))
+        {
+            {
+                LOG_DEBUG << " wrong state,should sync";
+            }
+            return;
+        }
+
+        if (old_state & (full | appending | swaping))
+        {
+            futex_wait(&state, old_state);
+            continue;
+        }
+
+        if (!_CAS_strong_release(&state, &old_state, 0)) continue;
+        futex_wake(&state);
+        break;
+    }
+
     thread.join();
 }
 
 void AsyncLogger::append(const char* logs, int len)
 {
-    MutexLockGuard lock(mutex);
+    for (;;)
+    {
+        atomic_ulong old_state = _load_acquire(&state);
+
+        if (!(old_state & available))
+        {
+            {
+                LOG_DEBUG << " stoping,no more append";
+            }
+            return;
+        }
+
+        if (old_state & (full | appending | swaping))
+        {
+            futex_wait(&state, old_state);
+            continue;
+        }
+
+        if (!_CAS_strong_relaxed(&state, &old_state, old_state | appending)) continue;
+        break;
+    }
+
     if (cur_buffer->avail() >= len)
     {
         cur_buffer->append(logs, len);
+        _store_release(&state, available);
+        futex_wake(&state);
     }
     else
     {
@@ -59,8 +108,10 @@ void AsyncLogger::append(const char* logs, int len)
         }
 
         cur_buffer->append(logs, len);
-        cond.notify();
+        _store_release(&state, full);
+        futex_wake(&state);
     }
+    return;
 }
 
 void AsyncLogger::threadFunc()
@@ -80,20 +131,44 @@ void AsyncLogger::threadFunc()
         assert(newBuffer2 && newBuffer2->length() == 0);
         assert(buffersToWrite.empty());
 
+        for (;;)
         {
-            MutexLockGuard lock(mutex);
-            if (buffers.empty())
+            atomic_ulong old_state = _load_acquire(&state);
+
+            if (!(old_state & available))
             {
-                cond.wait();
+                {
+                    LOG_DEBUG << " stoping,no more flush";
+                }
+                return;
             }
-            buffers.push_back(std::move(cur_buffer));
-            cur_buffer = std::move(newBuffer1);
-            buffersToWrite.swap(buffers);
-            if (!next_buffer)
+
+            if (old_state & full)
             {
-                next_buffer = std::move(newBuffer2);
+                while (!_CAS_weak_relaxed(&state, &old_state, (old_state ^ full) | swaping));
+                break;
             }
+
+            if (old_state & appending)
+            {
+                futex_wait(&state, old_state);
+                continue;
+            }
+
+            if (!_CAS_strong_relaxed(&state, &old_state, old_state | swaping)) continue;
+            break;
         }
+
+        buffers.push_back(std::move(cur_buffer));
+        cur_buffer = std::move(newBuffer1);
+        buffersToWrite.swap(buffers);
+        if (!next_buffer)
+        {
+            next_buffer = std::move(newBuffer2);
+        }
+
+        _fetch_sub_release(&state, swaping);
+        futex_wake(&state);
 
         for (std::unique_ptr<LogBuffer>& buf : buffersToWrite)
         {
@@ -121,4 +196,6 @@ void AsyncLogger::threadFunc()
     }
 
     log_file.flush();
+    _store_release(&state, 0);
+    futex_wake(&state);
 }

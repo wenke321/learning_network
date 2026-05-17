@@ -14,7 +14,9 @@
 
 #include "Channel.h"
 #include "Logger.h"
+#include "Mutex.h"
 #include "Poller.h"
+#include "TcpConnection.h"
 #include "TimerQueue.h"
 
 const int PollTimeout = 10000;
@@ -35,7 +37,7 @@ int createEventfd()
     return evfd;
 }
 
-EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), callingPendingFunctors(false), wakeup_fd(createEventfd()), epoller(new Epoller(this)), wakeupChannel(add_channel(wakeup_fd)), cur_activeCh(NULL), timerQueue(std::make_unique<TimerQueue>(this)), tid_(CurrentThread::tid())
+EventLoop::EventLoop() : pendingFunctors(1024), epoller(new Epoller(this)), cur_activeCh(NULL), tid_(CurrentThread::tid()), quit(false), looping(false), eventHandling(false), callingPendingFunctors(false)
 {
     LOG_INFO << "EventLoop created " << this << " in thread " << tid_;
     if (loopInThisThread)
@@ -46,11 +48,20 @@ EventLoop::EventLoop() : quit(false), looping(false), eventHandling(false), call
     {
         loopInThisThread = this;
     }
+    wakeup_fd     = createEventfd();
+    wakeupChannel = add_channel(wakeup_fd);
     wakeupChannel->set_in_callback([=] { handle_wakeup(); });
     wakeupChannel->EnableRead();
+
+    timerQueue = std::make_unique<TimerQueue>(this);
 }
 
-EventLoop::~EventLoop() { LOG_DEBUG << " "; }
+EventLoop::~EventLoop()
+{
+    {
+        LOG_DEBUG << " quit=" << quit << ",looping=" << looping;
+    }
+}
 
 bool EventLoop::isInLoopThread() { return tid_ == CurrentThread::tid(); }
 
@@ -85,16 +96,22 @@ void EventLoop::Loop()
         callingPendingFunctors = true;
 
         LOG_TRACE << " do pendingFunctors";
-        for (Functor f : pendingFunctors)
+        Functor task;
+        while (!pendingFunctors.empty())
         {
-            LOG_DEBUG << " this=" << &f;
-            f();
+            if (pendingFunctors.try_pop(task))
+                task();
+            else
+            {
+                LOG_DEBUG << " pendingFunctors pop failed";
+            }
         }
-        pendingFunctors.clear();
         callingPendingFunctors = false;
     }
 
-    LOG_TRACE << " Loop quit";
+    {
+        LOG_DEBUG << " Loop quit";
+    }
     looping = false;
 }
 
@@ -105,20 +122,21 @@ void EventLoop::quit_()
     if (!isInLoopThread()) wakeup();
 }
 
-void EventLoop::runInLoop(Functor cb)
+void EventLoop::runInLoop(Functor _cb)
 {
-    LOG_TRACE << " ";
     if (isInLoopThread())
-        cb();
+    {
+        _cb();
+    }
     else
-        queueInLoop(cb);
+        queueInLoop(_cb);
 }
 
-void EventLoop::queueInLoop(Functor cb)
+void EventLoop::queueInLoop(Functor _cb)
 {
-    pendingFunctors.push_back(cb);
+    pendingFunctors.push(_cb);
 
-    if (!isInLoopThread() || callingPendingFunctors) wakeup();
+    if (!isInLoopThread()) wakeup();
 }
 
 void EventLoop::runAt(triggerTime_t _triggerTime, TimerCallback _cb)

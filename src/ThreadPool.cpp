@@ -40,11 +40,11 @@ void ThreadPool::worker_loop()
     while (running)
     {
         Task task;
-        if (taskQueue.pop(task))
+        if (taskQueue.try_pop(task))
             task();
         else
             sched_yield();
     }
     Task task;
-    while (taskQueue.pop(task)) task();
+    while (taskQueue.try_pop(task)) task();
 }

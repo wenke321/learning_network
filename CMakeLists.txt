@@ -1,20 +1,20 @@
 cmake_minimum_required(VERSION 4.0)
 project(kwNet)
 
-# 使用 C++11 标准
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# 设置输出目录：可执行文件放在 build/bin，库文件放在 build/lib
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# 导出编译命令（用于 IDE 或 clangd）
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# 收集所有源文件（显式列出，避免 GLOB 的潜在问题）
+
 set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(SOURCES
     ${SRC_DIR}/Acceptor.cpp
@@ -45,20 +45,24 @@ set(SOURCES
     ${SRC_DIR}/Timestamp.cpp
 )
 
-# 构建静态库
-add_library(network_lib STATIC ${SOURCES}
+
+add_library(network_static STATIC ${SOURCES}
     src/SignalHandler.cpp)
 
-# 公开头文件路径（src 目录），同时要求库的使用者链接 pthread 和 rt
-target_include_directories(network_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(network_lib PUBLIC pthread rt)
+add_library(network_dynamic SHARED ${SOURCES}
+    src/SignalHandler.cpp)
 
-# 可选编译选项（调试信息、警告）
+
+# target_include_directories(network_static PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(network_dynamic PUBLIC pthread rt)
+target_link_libraries(network_static PUBLIC pthread rt)
+
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(network_lib PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(network_dynamic PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# 添加测试子目录
+
 add_subdirectory(test)
 
 

@@ -21,7 +21,6 @@ class SignalHandler
     ~SignalHandler();
 
     void init(EventLoop* _loop);
-    void default_handler();
     int get_fd();
 
     Channel* get_ch();
@@ -41,6 +40,10 @@ class SignalHandler
     static void default_handle_child();
 
    private:
+    void default_handler();
+
+    sigset_t mask;
+
     handle_func handle_sig_int;
     handle_func handle_sig_hup;
     handle_func handle_sig_term;
@@ -50,5 +53,5 @@ class SignalHandler
     handle_func handle_sig_child;
 
     Channel* signal_channel;
-    sigset_t mask;
+    bool sig_cared[65];
 };

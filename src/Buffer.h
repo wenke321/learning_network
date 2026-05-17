@@ -18,7 +18,7 @@ class stringPiece
 {
    public:
     constexpr stringPiece(const char* data, size_t size) : data_(data), size_(size) {}
-    constexpr stringPiece(const std::string& msg) : data_(msg.data()), size_(msg.size()) {}
+    stringPiece(const std::string& msg) : data_(msg.data()), size_(msg.size()) {}
     stringPiece(const char* data) : data_(data), size_(strlen(data)) {}
 
     const char* data() const { return data_; }
@@ -28,6 +28,16 @@ class stringPiece
     {
         data_ = nullptr;
         size_ = 0;
+    }
+
+    bool operator==(const char* s)
+    {
+        const char* a = data_;
+        for (char c = *s; c; ++s, ++a, c = *s)
+        {
+            if (c != *a) return false;
+        }
+        return true;
     }
 
    private:

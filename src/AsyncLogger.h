@@ -9,10 +9,18 @@
 #include "CountDownLatch.h"
 #include "LogStream.h"
 #include "Thread.h"
+#include "helpers/type_traits.h"
+
+#define appending 1
+#define full      2
+#define swaping   4
+#define available 8
+#define stoping   16
+
 class AsyncLogger
 {
    public:
-    typedef FixedBuffer<4096 * 1024> LogBuffer;
+    typedef FixedBuffer<1024 * 1024> LogBuffer;
 
     AsyncLogger(const std::string& basename_, off_t rollSize_, int flushInterval_);
     ~AsyncLogger();
@@ -27,6 +35,8 @@ class AsyncLogger
 
     volatile bool running;  // atomic
     char pad[64 - sizeof(bool)];
+    atomic_ulong state;
+    char pad1[64 - sizeof(state)];
     const off_t rollSize;
     const int flushInterval;
     const std::string basename;

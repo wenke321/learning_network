@@ -42,8 +42,8 @@ void Connector::startInLoop()
 void Connector::stop()
 {
     connect_ = false;
-    loop_->queueInLoop(std::bind(&Connector::stopInLoop, this));  // FIXME: unsafe
-                                                                  // FIXME: cancel timer
+    loop_->queueInLoop([this] { stopInLoop(); });  // FIXME: unsafe
+                                                   // FIXME: cancel timer
 }
 
 void Connector::stopInLoop()

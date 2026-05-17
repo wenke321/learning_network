@@ -17,6 +17,19 @@ class EchoClient;
 std::vector<std::unique_ptr<EchoClient>> clients;
 int current = 0;
 
+std::vector<stringPiece> tcp_unpack(std::string& msg)
+{
+    std::vector<stringPiece> ret;
+    unsigned long pos = 0, tag = 0;
+    while (pos < msg.size())
+    {
+        tag = msg.find("\n", pos);
+        ret.emplace_back(msg.data() + pos, tag - pos + 2);
+        pos = tag + 2;
+    }
+    return ret;
+}
+
 class EchoClient
 {
    public:
@@ -51,15 +64,28 @@ class EchoClient
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)
     {
-        std::string msg(buf->retrieveAllAsString());
-        LOG_DEBUG << conn->name() << " recv " << msg.size() << " bytes :" << " " << msg;
-        if (msg == "quit\n")
+        std::string m(buf->retrieveAllAsString());
+        std::vector<stringPiece> msgs = tcp_unpack(m);
         {
-            conn->shutdown();
+            LOG_DEBUG << conn->name() << " recv " << m.size() << " bytes : " << m << ",fd=" << conn->get_fd();
         }
-        else if (msg == "shutdown\n")
+        for (stringPiece msg : msgs)
         {
-            loop_->quit_();
+            if (msg == "quit\n")
+            {
+                conn->send("bye\n");
+                conn->set_unused();
+            }
+
+            if (msg == "bye\n")
+            {
+                conn->set_unused();
+            }
+
+            if (msg == "yes\n")
+            {
+                conn->shutdown();
+            }
         }
         // else
         // {

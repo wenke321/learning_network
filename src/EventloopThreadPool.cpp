@@ -31,6 +31,13 @@ void EventloopThreadPool::start(const ThreadInitCallback& cb_)
     started = true;
 }
 
+void EventloopThreadPool::stop()
+{
+    {
+        LOG_DEBUG << " ";
+    }
+}
+
 std::vector<EventLoop*>& EventloopThreadPool::get_ioloops() { return loops; }
 
 EventLoop* EventloopThreadPool::getNextLoop()

@@ -4,6 +4,7 @@
 #include <stdio.h>  // snprintf
 
 #include <csignal>
+#include <memory>
 
 #include "Connector.h"
 #include "InetAddr.h"
@@ -23,10 +24,10 @@
 // {
 // }
 
-void removeConnection(EventLoop* loop, const TcpConnectionPtr& conn)
-{
-    loop->queueInLoop([conn] { conn->connectDestroyed(); });
-}
+// void removeConnection(EventLoop* loop, const TcpConnectionPtr& conn)
+// {
+//     loop->queueInLoop([conn] { conn->connectDestroyed(); });
+// }
 void removeConnector(const ConnectorPtr& connector)
 {
     while (connector.use_count() > 1) sched_yield();
@@ -36,7 +37,9 @@ TcpClient::TcpClient(EventLoop* loop, const InetAddr& serverAddr, const std::str
 {
     connector_->setNewConnectionCallback([this](int fd) { newConnection(fd); });
     // FIXME setConnectFailedCallback
-    LOG_INFO << "TcpClient::TcpClient[" << name_ << "] - connector " << connector_.get();
+    {
+        LOG_INFO << "TcpClient::TcpClient[" << name_ << "] - connector " << connector_.get();
+    }
 }
 
 TcpClient::~TcpClient()
@@ -53,12 +56,12 @@ TcpClient::~TcpClient()
     {
         assert(loop_ == conn->getLoop());
         // FIXME: not 100% safe, if we are in different thread
-        CloseCallback cb = [this](const TcpConnectionPtr& conn) { ::removeConnection(loop_, conn); };
-        loop_->runInLoop(std::bind(&TcpConnection::setCloseCallback, conn, cb));
-        if (unique)
-        {
-            conn->forceClose();
-        }
+        // CloseCallback cb = [this](const TcpConnectionPtr& conn) { ::removeConnection(loop_, conn); };
+        // loop_->runInLoop(std::bind(&TcpConnection::setCloseCallback, conn, cb));
+        // if (unique)
+        // {
+        //     conn->forceClose();
+        // }
     }
     else
     {
@@ -72,7 +75,9 @@ TcpClient::~TcpClient()
 void TcpClient::connect()
 {
     // FIXME: check state
-    LOG_INFO << "TcpClient::connect[" << name_ << "] - connecting to " << connector_->serverAddress().ipPortStr();
+    {
+        LOG_INFO << "TcpClient::connect[" << name_ << "] - connecting to " << connector_->serverAddress().ipPortStr();
+    }
     connect_ = true;
     connector_->start();
 }
@@ -109,7 +114,7 @@ void TcpClient::newConnection(int sockfd)
     InetAddr* localAddr = new InetAddr(sockOption::getLocalAddr(sockfd));
     // FIXME poll with zero timeout to double confirm the new connection
     // FIXME use make_shared if necessary
-    TcpConnectionPtr conn(new TcpConnection(connector_->ch_(), connName, localAddr, peerAddr));
+    TcpConnectionPtr conn = std::make_shared<TcpConnection>(connector_->ch_(), connName, localAddr, peerAddr);
 
     conn->setConnectionCallback(connectionCallback_);
     conn->setMessageCallback(messageCallback_);

@@ -1,26 +1,36 @@
 #include <bits/types/sigset_t.h>
 
 #include <atomic>
-#include <chrono>
 #include <csignal>
 #include <cstdio>
-#include <thread>
+#include <vector>
 
-#include "Thread.h"
+#include "Buffer.h"
 
 std::atomic<int> g_request_count{0};
 
 #include <unistd.h>
 
-#include <iostream>
-
 #include "../src/Logger.h"
 #include "../src/TcpServer.h"
+#include "../src/helpers/kw_micros.h"
 #include "AsyncLogger.h"
 #include "CurrentThread.h"
-#include "SignalHandler.h"
 
 int numThreads = 0;
+
+std::vector<stringPiece> tcp_unpack(std::string& msg)
+{
+    std::vector<stringPiece> ret;
+    unsigned long pos = 0, tag = 0;
+    while (pos < msg.size())
+    {
+        tag = msg.find("\n", pos);
+        ret.emplace_back(msg.data() + pos, tag - pos + 2);
+        pos = tag + 2;
+    }
+    return ret;
+}
 
 class EchoServer
 {
@@ -41,21 +51,35 @@ class EchoServer
         LOG_TRACE << conn->peerAddress()->ipPortStr() << " -> " << conn->localAddress()->ipPortStr() << " is " << (conn->connected() ? "UP" : "DOWN");
         // LOG_INFO << conn->getTcpInfoString();
 
+        {
+            LOG_DEBUG << " send quit,fd=" << conn->get_fd();
+        }
         conn->send("quit\n");
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)
     {
-        std::string msg(buf->retrieveAllAsString());
-        LOG_DEBUG << conn->name() << " recv " << msg.size() << " bytes :" << " " << msg;
-        if (msg == "exit\n")
+        std::string m(buf->retrieveAllAsString());
+        std::vector<stringPiece> msgs = tcp_unpack(m);
         {
-            conn->send("bye\n");
-            conn->shutdown();
+            LOG_DEBUG << conn->name() << " recv " << m.size() << " bytes : " << m << ",fd=" << conn->get_fd();
         }
-        if (msg == "quit\n")
+        for (stringPiece msg : msgs)
         {
-            loop_->quit_();
+            if (msg == "exit\n")
+            {
+                conn->send("bye\n");
+                conn->shutdown();
+            }
+            if (msg == "quit\n")
+            {
+                loop_->quit_();
+            }
+            if (msg == "bye\n")
+            {
+                conn->send("yes\n");
+                conn->set_unused();
+            }
         }
         // if (msg == "world\n") conn->send("quit\n");
 

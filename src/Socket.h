@@ -31,5 +31,5 @@ class Socket
     bool getTcpInfoString(char* buf, int len);
 
    private:
-    const int fd;
+    int fd;
 };

@@ -3,7 +3,8 @@
 // init file
 #define cache_line_size 64
 
-#define atomic_int int
+// atomics
+#define atomic_ulong unsigned long long
 
 template <class T>
 struct wrap

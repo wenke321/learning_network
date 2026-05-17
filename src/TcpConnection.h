@@ -94,12 +94,19 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     // called when TcpServer has removed me from its map
     void connectDestroyed();  // should be called only once
 
+    // it means you don't need this connection any more
+    void set_unused();
+
+    int get_fd();
+
     enum StateE
     {
         Connecting    = 1,
-        Connected     = 2,
-        Disconnecting = 4,
-        Disconnected  = 8
+        Disconnecting = 2,
+        Disconnected  = 4,
+        Connected     = 8,
+        used          = 16,
+        writing       = 32,
     };
 
    private:
@@ -112,9 +119,8 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     HighWaterMarkCallback highWaterMarkCallback_;
     CloseCallback closeCallback_;
 
-    volatile atomic_int state_;
-
-    char pad2[cache_line_size - sizeof(state_)];
+    volatile atomic_ulong state_;
+    char pad1[cache_line_size - sizeof(state_)];
 
     const std::string name_;
 
@@ -137,7 +143,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     void handle_ep_err();
 
     // void sendInLoop(string&& message);
-    void sendInLoop(const stringPiece& message);
+    void sendInLoop(const stringPiece message);
     void sendInLoop(const void* message, size_t len);
 
     void shutdownInLoop();
@@ -145,7 +151,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     void forceCloseInLoop();
 
     void setState(StateE s) { state_ = s; }
-    const char* stateToString() const;
+    std::string stateToString(int) const;
 
     void startReadInLoop();
     void stopReadInLoop();

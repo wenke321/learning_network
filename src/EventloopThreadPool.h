@@ -12,6 +12,7 @@ class EventloopThreadPool
     ~EventloopThreadPool();
 
     void start(const ThreadInitCallback& cb_);
+    void stop();
     void setThreadNum(int n) { threadNum = n; }
     EventLoop* getNextLoop();
     std::vector<EventLoop*>& get_ioloops();

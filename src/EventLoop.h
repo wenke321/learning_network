@@ -10,8 +10,10 @@
 
 #include "Acceptor.h"
 #include "Poller.h"
+#include "TcpConnection.h"
 #include "Timer.h"
 #include "Timestamp.h"
+#include "helpers/queue.h"
 
 class Channel;
 class TimerQueue;
@@ -27,8 +29,9 @@ class EventLoop
     void Loop();
     void quit_();
 
-    void runInLoop(Functor func);
-    void queueInLoop(Functor func);
+    void runInLoop(Functor);
+    void queueInLoop(Functor);
+
     void addTimer(Timer*);
     void cancelTimer(Timer*);
     void runAt(triggerTime_t triggerTime_, TimerCallback cb);
@@ -50,19 +53,17 @@ class EventLoop
     void handle_wakeup();  // wakeup
     void doPendingFunctors();
 
+    mpmc_bounded_Queue<Functor> pendingFunctors;
+    std::vector<Channel*> activeChannels;
+    std::unique_ptr<Poller> epoller;
+    Channel* wakeupChannel;
+    Channel* cur_activeCh;
+    Timestamp pollReturnTime;
+    std::unique_ptr<TimerQueue> timerQueue;
+    const pid_t tid_;
+    int wakeup_fd;
     bool quit;
     bool looping;
     bool eventHandling;
     bool callingPendingFunctors;
-    const pid_t tid_;
-    int wakeup_fd;
-    std::unique_ptr<Poller> epoller;
-    Channel* wakeupChannel;
-    std::vector<Channel*> activeChannels;
-    Channel* cur_activeCh;
-    Timestamp pollReturnTime;
-    std::unique_ptr<TimerQueue> timerQueue;
-
-    MutexLock mutex;
-    std::vector<Functor> pendingFunctors;
 };

@@ -17,15 +17,7 @@ int create_sigfd(sigset_t& mask)
     return fd;
 }
 
-SignalHandler::SignalHandler()
-{
-    LOG_TRACE << " ";
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGINT);
-    sigaddset(&mask, SIGTERM);
-    sigaddset(&mask, SIGSEGV);
-    sigaddset(&mask, SIGHUP);
-}
+SignalHandler::SignalHandler() {}
 
 SignalHandler::~SignalHandler()
 {
@@ -40,7 +32,11 @@ void SignalHandler::default_handler()
 
     if (read(signal_channel->fd_(), &sig_info, sizeof(signalfd_siginfo)) == sizeof(signalfd_siginfo))
     {
-        LOG_INFO << " receive signal=" << sig_info.ssi_signo;
+        LOG_INFO << "receive signal=" << sig_info.ssi_signo;
+    }
+    else
+    {
+        LOG_ERROR << "";
     }
 
     switch (sig_info.ssi_signo)
@@ -71,12 +67,36 @@ void SignalHandler::default_handler()
     }
 }
 
-void SignalHandler::set_handle_int(handle_func _handle_int = default_handle_int) { handle_sig_int = _handle_int; }
-void SignalHandler::set_handle_hup(handle_func _handle_hup = default_handle_hup) { handle_sig_hup = _handle_hup; }
-void SignalHandler::set_handle_term(handle_func _handle_term = default_handle_term) { handle_sig_term = _handle_term; }
-void SignalHandler::set_handle_quit(handle_func _handle_quit = default_handle_quit) { handle_sig_quit = _handle_quit; }
-void SignalHandler::set_handle_abort(handle_func _handle_abort = default_handle_abort) { handle_sig_abort = _handle_abort; }
-void SignalHandler::set_handle_child(handle_func _handle_child = default_handle_child) { handle_sig_child = _handle_child; }
+void SignalHandler::set_handle_int(handle_func _handle_int = default_handle_int)
+{
+    handle_sig_int    = _handle_int;
+    sig_cared[SIGINT] = true;
+}
+void SignalHandler::set_handle_hup(handle_func _handle_hup = default_handle_hup)
+{
+    handle_sig_hup    = _handle_hup;
+    sig_cared[SIGHUP] = true;
+}
+void SignalHandler::set_handle_term(handle_func _handle_term = default_handle_term)
+{
+    handle_sig_term    = _handle_term;
+    sig_cared[SIGTERM] = true;
+}
+void SignalHandler::set_handle_quit(handle_func _handle_quit = default_handle_quit)
+{
+    handle_sig_quit    = _handle_quit;
+    sig_cared[SIGQUIT] = true;
+}
+void SignalHandler::set_handle_abort(handle_func _handle_abort = default_handle_abort)
+{
+    handle_sig_abort   = _handle_abort;
+    sig_cared[SIGABRT] = true;
+}
+void SignalHandler::set_handle_child(handle_func _handle_child = default_handle_child)
+{
+    handle_sig_child   = _handle_child;
+    sig_cared[SIGCHLD] = true;
+}
 
 void SignalHandler::default_handle_int() { LOG_TRACE << " default_handle_int"; }
 
@@ -92,6 +112,12 @@ void SignalHandler::default_handle_child() { LOG_TRACE << " default_handle_child
 void SignalHandler::init(EventLoop* _loop)
 {
     LOG_DEBUG << " ";
+    sigemptyset(&mask);
+    for (int i = 0; i < 65; i++)
+    {
+        if (sig_cared[i]) sigaddset(&mask, i);
+    }
+
     int fd = create_sigfd(mask);
     pthread_sigmask(SIG_BLOCK, &mask, nullptr);
     signal_channel = _loop->add_channel(fd);
