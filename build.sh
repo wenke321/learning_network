@@ -1,0 +1,27 @@
+#!/bin/sh
+
+echo "type -[BUUILD_DIR] -[BUILD_TYPE] or default(./build,release) : "
+read -r param
+
+set -x
+
+SOURCE_DIR=`pwd`
+
+BUILD_DIR=${BUILD_DIR:-./build}
+BUILD_TYPE=${BUILD_TYPE:-release}
+INSTALL_DIR=${INSTALL_DIR:-$BUILD_DIR/bin/${BUILD_TYPE}-cpp14}
+
+if [ -n param];then
+    BUILD_DIR=${param[0]}
+    BUILD_TYPE=${param[1]}
+fi
+
+
+mkdir -p $BUILD_DIR/$BUILD_TYPE-cpp14 \
+   && cd $BUILD_DIR/$BUILD_TYPE-cpp14 \
+   && cmake \
+            -DCMAKE_BUILD_TYPE==$BUILD_TYPE \
+            -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            $SOURCE_DIR \
+   && make $*
