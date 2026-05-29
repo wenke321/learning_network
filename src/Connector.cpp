@@ -6,11 +6,12 @@
 #include <cassert>
 
 #include "EventLoop.h"
-#include "Logger.h"
+#include "Loggers/Logger.h"
+#include "Sockets/SocketOps.h"
 
 const int Connector::MaxRetryDelayMs;
 
-Connector::Connector(EventLoop* loop, const InetAddr& serverAddr) : loop_(loop), serverAddr_(serverAddr), connect_(false), state_(Disconnected), retryDelayMs_(InitRetryDelayMs) { LOG_TRACE << "ctor[" << this << "]"; }
+Connector::Connector(EventLoop* loop, const InetAddr& serverAddr) : loop_(loop), serverAddr_(serverAddr), connect_(false), state_(Disconnected), channel_(nullptr), retryDelayMs_(InitRetryDelayMs) { LOG_TRACE << "ctor[" << this << "]"; }
 
 Connector::~Connector()
 {
@@ -63,14 +64,36 @@ void Connector::connect()
 
     int ret        = sockOption::connect(serverfd, serverAddr_.getSockAddr());
     int savedErrno = (ret == 0) ? 0 : errno;
-    LOG_TRACE << "Connector::connect";
+    {
+        LOG_DEBUG << " fd=" << serverfd;
+    }
     switch (savedErrno)
     {
         case 0:
+            channel_ = loop_->add_channel(serverfd);
+            {
+                LOG_DEBUG << " connect established,fd=" << serverfd;
+            }
+            setState(Connected);
+            channel_->reset_listen_events();
+            if (connect_)
+            {
+                newConnectionCallback_(serverfd);
+            }
+            else
+            {
+                {
+                    LOG_ERROR << "bool connect_=0,close fd=" << serverfd;
+                }
+                sockOption::close(serverfd);
+            }
+            break;
         case EINPROGRESS:
         case EINTR:
         case EISCONN:
+        {
             LOG_DEBUG << " expected errno,may succeed";
+        }
             connecting(serverfd);
             break;
 
@@ -79,6 +102,9 @@ void Connector::connect()
         case EADDRNOTAVAIL:
         case ECONNREFUSED:
         case ENETUNREACH:
+        {
+            LOG_DEBUG << " retry,fd=" << serverfd;
+        }
             retry(serverfd);
             break;
 
@@ -89,12 +115,16 @@ void Connector::connect()
         case EBADF:
         case EFAULT:
         case ENOTSOCK:
+        {
             LOG_SYSERR << "connect error in Connector::startInLoop " << savedErrno;
+        }
             sockOption::close(serverfd);
             break;
 
         default:
+        {
             LOG_SYSERR << "Unexpected error in Connector::startInLoop " << savedErrno;
+        }
             sockOption::close(serverfd);
             break;
     }
@@ -111,13 +141,16 @@ void Connector::restart()
 
 void Connector::connecting(int serverfd)
 {
-    LOG_DEBUG << " fd=" << serverfd;
+    {
+        LOG_DEBUG << " state=" << state_ << ",fd=" << serverfd;
+    }
     assert(!channel_);
     setState(Connecting);
 
     channel_ = loop_->add_channel(serverfd);
     channel_->set_out_callback([this] { check_whether_connected(); });
     channel_->set_err_callback([this] { handle_err(); });
+    channel_->set_io_channel();
     channel_->EnableWrite();
 }
 
@@ -132,14 +165,16 @@ void Connector::resetChannel() { channel_ = nullptr; }
 
 void Connector::check_whether_connected()
 {
-    LOG_TRACE << " Connector::check_whether_connected,state_=" << state_;
+    int fd = channel_->fd_();
+    {
+        LOG_DEBUG << " Connector::check_whether_connected,state_=" << state_ << ",fd=" << fd;
+    }
 
     if (state_ == Connecting)
     {
         // int serverfd = removeAndResetChannel();
-        int fd  = channel_->fd_();
         int err = sockOption::getSocketError(fd);
-        if (err)
+        if (err != 0)
         {
             LOG_WARN << "Connector::check_whether_connected - SO_ERROR = " << err << " " << strerrorInfo(err);
             retry(fd);
@@ -151,7 +186,9 @@ void Connector::check_whether_connected()
         }
         else
         {
-            LOG_DEBUG << " connect established,fd=" << fd;
+            {
+                LOG_DEBUG << " connect established,fd=" << fd;
+            }
             setState(Connected);
             channel_->reset_listen_events();
             if (connect_)
@@ -160,11 +197,16 @@ void Connector::check_whether_connected()
             }
             else
             {
-                LOG_ERROR << "bool connect_=0,close fd=" << fd;
+                {
+                    LOG_ERROR << "bool connect_=0,close fd=" << fd;
+                }
                 sockOption::close(fd);
             }
         }
     }
+    else if (state_ == Connected && channel_->tied_())
+        return;
+
     else
     {
         LOG_ERROR << "Connector::check_whether_connected,error don't know";

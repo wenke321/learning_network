@@ -1,7 +1,7 @@
 #pragma once
 
 #include "EventLoop.h"
-#include "Thread.h"
+#include "Threads/Thread.h"
 
 typedef std::function<void(EventLoop*)> ThreadInitCallback;
 

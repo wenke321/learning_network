@@ -1,4 +1,4 @@
-#include "AsyncLogger.h"
+#include "Loggers/AsyncLogger.h"
 
 #include <stdio.h>
 #include <sys/resource.h>
@@ -6,9 +6,9 @@
 
 #include <cstddef>
 
-#include "Logger.h"
-#include "ThreadPool.h"
-#include "Timestamp.h"
+#include "Loggers/Logger.h"
+#include "Threads/ThreadPool.h"
+#include "Timers/Timestamp.h"
 
 off_t kRollSize = 500 * 1000 * 1000;
 

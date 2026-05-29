@@ -42,21 +42,15 @@ class TcpServer
     std::shared_ptr<EventloopThreadPool> threadPool() { return threadPool_; }
 
     /// Starts the server if it's not listening.
-    ///
-    /// It's harmless to call it multiple times.
-    /// Thread safe.
+
     void start();
 
-    /// Set connection callback.
-    /// Not thread safe.
     void setConnectionCallback(const ConnectionCallback& cb) { connectionCallback_ = cb; }
 
-    /// Set message callback.
-    /// Not thread safe.
     void setMessageCallback(const MessageCallback& cb) { messageCallback_ = cb; }
 
-    /// Set write complete callback.
-    /// Not thread safe.
+    void set_OOB_callback(const std::function<void(const TcpConnectionPtr&, char)>& _cb) { OOB_callback = _cb; }
+
     void setWriteCompleteCallback(const WriteCompleteCallback& cb) { writeCompleteCallback_ = cb; }
 
     void removeConnection(TcpConnectionPtr conn);
@@ -78,6 +72,7 @@ class TcpServer
     std::shared_ptr<EventloopThreadPool> threadPool_;
     ConnectionCallback connectionCallback_;
     MessageCallback messageCallback_;
+    std::function<void(const TcpConnectionPtr&, char)> OOB_callback;
     WriteCompleteCallback writeCompleteCallback_;
     ThreadInitCallback threadInitCallback_;
     volatile uint32_t started_;

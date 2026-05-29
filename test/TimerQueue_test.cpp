@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "AsyncLogger.h"
 #include "EventLoop.h"
 #include "EventloopThread.h"
-#include "Logger.h"
-#include "Timestamp.h"
+#include "Loggers/AsyncLogger.h"
+#include "Loggers/Logger.h"
+#include "Timers/Timestamp.h"
 
 int cnt = 0;
 EventLoop* g_loop;

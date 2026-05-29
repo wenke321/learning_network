@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <linux/futex.h>
 #include <sched.h>
+#include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -16,18 +17,16 @@
 #include <memory>
 #include <string>
 
-#include "Buffer.h"
-#include "Channel.h"
-#include "Logger.h"
-#include "Socket.h"
-#include "SocketOps.h"
-#include "Timer.h"
-#include "Timestamp.h"
+#include "Loggers/Logger.h"
+#include "Memorys/Buffer.h"
+#include "Sockets/Socket.h"
+#include "Sockets/SocketOps.h"
+#include "Timers/Timer.h"
+#include "Timers/Timestamp.h"
 #include "WeakCallback.h"
+#include "basics/Channel.h"
 #include "helpers/builtins.h"
 #include "helpers/kw_micros.h"
-
-#define senders_offset 6
 
 int TcpConnection::get_fd() { return channel_->fd_(); }
 
@@ -39,7 +38,7 @@ void defaultConnectionCallback(const TcpConnectionPtr& conn)
 
 void defaultMessageCallback(const TcpConnectionPtr&, Buffer* buf) { buf->retrieveAll(); }
 
-TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr) : name_(nameArg), reading_(true), socket_(new Socket(sockfd)), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024), loop_(loop)
+TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr, bool _keep_alive) : name_(nameArg), reading_(true), socket_(new Socket(sockfd)), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024), loop_(loop)
 {
     {
         LOG_DEBUG << " TcpConnection::ctor[" << name_ << "] at " << this << " fd=" << sockfd;
@@ -50,12 +49,12 @@ TcpConnection::TcpConnection(EventLoop* loop, const std::string& nameArg, int so
     channel_->set_rdhup_callback([this] { handle_ep_rdhup(); });
     channel_->set_hup_callback([this] { handle_ep_hup(); });
     channel_->set_err_callback([this] { handle_ep_err(); });
-    socket_->setKeepAlive(true);
+    if (_keep_alive) socket_->setKeepAlive(true);
 
     _store_release(&state_, Connecting);
 }
 
-TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr) : state_(Connecting), name_(name), reading_(true), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
+TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr, bool _keep_alive) : state_(Connecting), name_(name), reading_(true), localAddr_(localAddr), peerAddr_(peerAddr), highWaterMark_(64 * 1024 * 1024)
 {
     {
         LOG_DEBUG << " TcpConnection::ctor[" << name_ << "] at " << this << " fd=" << ch->fd_();
@@ -69,7 +68,7 @@ TcpConnection::TcpConnection(Channel*& ch, const std::string& name, const InetAd
     channel_->set_rdhup_callback([this] { handle_ep_rdhup(); });
     channel_->set_hup_callback([this] { handle_ep_hup(); });
     channel_->set_err_callback([this] { handle_ep_err(); });
-    socket_->setKeepAlive(true);
+    if (_keep_alive) socket_->setKeepAlive(true);
 
     _store_release(&state_, Connecting);
 }
@@ -92,8 +91,8 @@ const std::string& TcpConnection::name() const { return name_; }
 const InetAddr* TcpConnection::localAddress() const { return localAddr_; }
 const InetAddr* TcpConnection::peerAddress() const { return peerAddr_; }
 
-bool TcpConnection::connected() const { return state_ & Connected; }
-bool TcpConnection::disconnected() const { return state_ & Disconnected; }
+bool TcpConnection::connected() const { return state_ & Connected; }        // fix
+bool TcpConnection::disconnected() const { return state_ & Disconnected; }  // fix
 
 bool TcpConnection::getTcpInfo(struct tcp_info* tcpi) const { return socket_->getTcpInfo(tcpi); }
 
@@ -172,6 +171,7 @@ void TcpConnection::send(const stringPiece& message)
             {
                 LOG_DEBUG << " hup already";
             }
+            old_state = _load_acquire(&state_);
             return;
         }
         if (kw_unlikely(!(old_state & used)))
@@ -231,6 +231,69 @@ void TcpConnection::send(const stringPiece& message)
 // FIXME efficiency!!!
 void TcpConnection::send(Buffer* buf)
 {
+    atomic_ulong old_state = _load_acquire(&state_);
+    {
+        LOG_DEBUG << " fd=" << channel_->fd_() << ",state=" << stateToString(old_state);
+    }
+
+    if (old_state & Connecting)
+    {
+        futex_wait(&state_, Connecting);
+        old_state = _load_acquire(&state_);
+    }
+
+    for (;;)
+    {
+        if (kw_unlikely(old_state & Disconnected))
+        {
+            {
+                LOG_DEBUG << " hup already";
+            }
+            old_state = _load_acquire(&state_);
+            return;
+        }
+        if (kw_unlikely(!(old_state & used)))
+        {
+            {
+                LOG_DEBUG << " send must before set_unused !!!" << " state=" << stateToString(old_state);
+            }
+            return;
+        }
+        if (old_state & writing)
+        {
+            if (!_CAS_strong_relaxed(&state_, &old_state, old_state + (1 << 6))) continue;
+            break;
+        }
+        else
+        {
+            if (!_CAS_strong_relaxed(&state_, &old_state, old_state | writing))
+            {
+                old_state = _load_acquire(&state_);
+                continue;
+            }
+            old_state |= writing;
+            while (!_CAS_strong_relaxed(&state_, &old_state, old_state + (1 << senders_offset)))
+            {
+                if (old_state & Disconnected)
+                {
+                    {
+                        LOG_DEBUG << " hup already";
+                    }
+                    old_state = _load_acquire(&state_);
+                    return;
+                }
+                else
+                {
+                    {
+                        LOG_DEBUG << " impossible state,should sync" << ",state=" << stateToString(old_state);
+                    }
+                    return;
+                }
+            }
+            break;
+        }
+    }
+
     if (loop_->isInLoopThread())
     {
         sendInLoop(buf->readBegin(), buf->readableBytes());
@@ -242,6 +305,81 @@ void TcpConnection::send(Buffer* buf)
         std::string data = buf->retrieveAllAsString();
         loop_->runInLoop([=] { sendInLoop(data.data(), data.size()); });
         // std::forward<string>(message)));
+    }
+}
+
+void TcpConnection::send_OOB(const stringPiece& _msg)
+{
+    atomic_ulong old_state = _load_acquire(&state_);
+    {
+        LOG_DEBUG << " fd=" << channel_->fd_() << ",state=" << stateToString(old_state);
+    }
+
+    if (old_state & Connecting)
+    {
+        futex_wait(&state_, Connecting);
+        old_state = _load_acquire(&state_);
+    }
+
+    for (;;)
+    {
+        if (kw_unlikely(old_state & Disconnected))
+        {
+            {
+                LOG_DEBUG << " hup already";
+            }
+            old_state = _load_acquire(&state_);
+            return;
+        }
+        if (kw_unlikely(!(old_state & used)))
+        {
+            {
+                LOG_DEBUG << " send must before set_unused !!!" << " state=" << stateToString(old_state);
+            }
+            return;
+        }
+        if (old_state & writing)
+        {
+            if (!_CAS_strong_relaxed(&state_, &old_state, old_state + (1 << 6))) continue;
+            break;
+        }
+        else
+        {
+            if (!_CAS_strong_relaxed(&state_, &old_state, old_state | writing))
+            {
+                old_state = _load_acquire(&state_);
+                continue;
+            }
+            old_state |= writing;
+            while (!_CAS_strong_relaxed(&state_, &old_state, old_state + (1 << senders_offset)))
+            {
+                if (old_state & Disconnected)
+                {
+                    {
+                        LOG_DEBUG << " hup already";
+                    }
+                    old_state = _load_acquire(&state_);
+                    return;
+                }
+                else
+                {
+                    {
+                        LOG_DEBUG << " impossible state,should sync" << ",state=" << stateToString(old_state);
+                    }
+                    return;
+                }
+            }
+            break;
+        }
+    }
+
+    if (loop_->isInLoopThread())
+    {
+        sendInLoop(_msg);
+    }
+    else
+    {
+        loop_->queueInLoop([=] { sendInLoop(_msg); });
     }
 }
 
@@ -261,7 +399,7 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
     bool faultError  = false;
 
     // if no thing in output queue, try writing directly
-    if (!channel_->isWriting() && outputBuffer_.readableBytes() == 0)
+    if (!channel_->isWriting() && outputBuffers_.empty())
     {
         while (remaining)
         {
@@ -298,12 +436,14 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
     assert(remaining <= len);
     if (!faultError && remaining > 0)  // EAGAIN
     {
-        size_t oldLen = outputBuffer_.readableBytes();
-        if (oldLen + remaining >= highWaterMark_ && oldLen < highWaterMark_ && highWaterMarkCallback_)
+        Buffer buf(remaining);
+        oldLen += remaining;
+        if (oldLen >= highWaterMark_ && oldLen < highWaterMark_ && highWaterMarkCallback_)
         {
-            loop_->queueInLoop(std::bind(highWaterMarkCallback_, shared_from_this(), oldLen + remaining));
+            loop_->queueInLoop(std::bind(highWaterMarkCallback_, shared_from_this(), oldLen));
         }
-        outputBuffer_.append(static_cast<const char*>(data) + nwrote, remaining);
+        buf.append(static_cast<const char*>(data) + nwrote, remaining);
+        outputBuffers_.emplace_front(std::move(buf));
         if (!channel_->isWriting())
         {
             channel_->EnableWrite();
@@ -378,6 +518,7 @@ void TcpConnection::sendInLoop(const void* data, size_t len)
             }
             break;
         }
+        // debug
         else
         {
             {
@@ -485,7 +626,7 @@ void TcpConnection::forceClose()
     {
         LOG_DEBUG << " fd=" << channel_->fd_();
     }
-    loop_->runInLoop([conn = shared_from_this()] { conn->handle_ep_hup(); });
+    loop_->runInLoop([&] { forceCloseInLoop(); });
 }
 
 void TcpConnection::forceCloseWithDelay(double seconds)
@@ -511,6 +652,7 @@ void TcpConnection::forceCloseInLoop()
         LOG_DEBUG << " fd=" << channel_->fd_();
     }
     loop_->assertInLoopThread();
+    set_unused();
     handle_ep_hup();
 }
 
@@ -555,6 +697,22 @@ void TcpConnection::stopReadInLoop()
     }
 }
 
+void TcpConnection::setConnectionCallback(const ConnectionCallback& cb) { connectionCallback_ = cb; }
+
+void TcpConnection::setMessageCallback(const MessageCallback& cb) { messageCallback_ = cb; }
+
+void TcpConnection::set_OOB_callback(std::function<void(const TcpConnectionPtr&, char)> _cb) { OOB_messageCallback_ = _cb; }
+
+void TcpConnection::setWriteCompleteCallback(const WriteCompleteCallback& cb) { writeCompleteCallback_ = cb; }
+
+void TcpConnection::setCloseCallback(const CloseCallback& cb) { closeCallback_ = cb; }
+
+void TcpConnection::setHighWaterMarkCallback(const HighWaterMarkCallback& cb, size_t highWaterMark)
+{
+    highWaterMarkCallback_ = cb;
+    highWaterMark_         = highWaterMark;
+}
+
 void TcpConnection::connectEstablished()
 {
     {
@@ -572,9 +730,9 @@ void TcpConnection::connectEstablished()
     channel_->EnableRead();
 
     _store_release(&state_, (Connected | used));
+    futex_wake(&state_);
 
     connectionCallback_(shared_from_this());
-    futex_wake(&state_);
 }
 
 void TcpConnection::connectDestroyed()
@@ -587,11 +745,14 @@ void TcpConnection::connectDestroyed()
 
 void TcpConnection::handle_ep_in()
 {
+    loop_->assertInLoopThread();
+
+    // debug
     atomic_ulong old_state = _load_relaxed(&state_);
     {
         LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString(old_state);
     }
-    loop_->assertInLoopThread();
+
     int savedErrno = 0;
     ssize_t n      = 0;
     while (1)
@@ -639,33 +800,98 @@ void TcpConnection::handle_ep_in()
     }
 }
 
+void TcpConnection::handle_ep_pri()
+{
+    loop_->assertInLoopThread();
+
+    // debug
+    atomic_ulong old_state = _load_relaxed(&state_);
+    {
+        LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString(old_state);
+    }
+
+    char oob;
+    int savedErrno = 0;
+    ssize_t n      = 0;
+    while (1)
+    {
+        ssize_t cur = ::recv(channel_->fd_(), &oob, 1, MSG_OOB);
+        savedErrno  = errno;
+        if (cur > 0)
+        {
+            n += cur;
+            continue;
+        }
+        else if (cur == 0)
+        {
+            {
+                LOG_ERROR << " EOF,should close";
+            }
+            if (n > 0)
+            {
+                messageCallback_(shared_from_this(), &inputBuffer_);
+            }
+            handle_ep_hup();
+            return;
+        }
+        else
+        {
+            if (savedErrno == EINTR)
+                continue;
+            else if (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK || savedErrno == 0)
+            {
+                break;
+            }
+            else
+            {
+                {
+                    LOG_DEBUG << " errno=" << savedErrno << ",fd=" << channel_->fd_();
+                }
+                handle_ep_hup();
+                return;
+            }
+        }
+    }
+    if (n == 1)
+    {
+        OOB_messageCallback_(shared_from_this(), oob);
+    }
+    else
+    {
+        LOG_SYSERR << " oob != 1 byte";
+    }
+}
+
 void TcpConnection::handle_ep_out()
 {
     loop_->assertInLoopThread();
+
+    // debug
     {
         LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString(_load_relaxed(&state_));
     }
 
-    if (outputBuffer_.readableBytes() == 0)
+    if (outputBuffers_.empty())
     {
         channel_->DisableWrite();
         return;
     }
 
-    bool written = false;
-    while (outputBuffer_.readableBytes())
+    int left, fd = channel_->fd_();
+    while (!outputBuffers_.empty())
     {
-        if (channel_->isWriting())
+        Buffer& buf = outputBuffers_.front();
+        left        = buf.readableBytes();
+        while (left)
         {
-            ssize_t n = sockOption::write(channel_->fd_(), outputBuffer_.readBegin(), outputBuffer_.readableBytes());
+            ssize_t n = sockOption::write(fd, buf.readBegin(), left);
             if (n > 0)
             {
-                written = true;
-                outputBuffer_.retrieve(n);
+                buf.retrieve(n);
             }
             else
             {
-                int err = sockOption::getSocketError(channel_->fd_());
+                int err = sockOption::getSocketError(fd);
                 if (err == EAGAIN)
                     return;
                 else if (err == EINTR)
@@ -676,34 +902,26 @@ void TcpConnection::handle_ep_out()
                         LOG_SYSERR << "TcpConnection::handleWrite," << " SO_ERROR = " << err << " " << strerrorInfo(err);
                     }
                     handle_ep_hup();
+                    outputBuffers_.clear();
                     break;
                 }
             }
         }
-        else
+        if (buf.readableBytes() == 0)
         {
-            LOG_TRACE << "Connection fd = " << channel_->fd_() << " is down, no more writing";
-            return;
-        }
-    }
-    if (outputBuffer_.readableBytes() == 0)
-    {
-        if (written)
-        {
-            channel_->DisableWrite();
             if (writeCompleteCallback_)
             {
                 loop_->queueInLoop([this, conn = shared_from_this()] { writeCompleteCallback_(conn); });
             }
+            outputBuffers_.pop_front();
         }
-
-        if (rdhup_phrase)
+    }
+    if (rdhup_phrase)
+    {
         {
-            {
-                LOG_DEBUG << " rdhup_phrase";
-            }
-            handle_ep_hup();
+            LOG_DEBUG << " rdhup_phrase";
         }
+        handle_ep_hup();
     }
 }
 
@@ -711,10 +929,12 @@ void TcpConnection::handle_ep_out()
 // return whether SHUT_WR
 bool TcpConnection::finish_in_out()
 {
+    loop_->assertInLoopThread();
+
     {
         LOG_DEBUG << " fd = " << channel_->fd_();
     }
-    loop_->assertInLoopThread();
+
     int savedErrno = 0;
     ssize_t n      = 0;
     while (1)
@@ -757,48 +977,44 @@ bool TcpConnection::finish_in_out()
     }
 
     //
-    if (outputBuffer_.readableBytes() == 0)
+    int left, fd = channel_->fd_();
+    while (!outputBuffers_.empty())
     {
-        return true;
-    }
-
-    int remain = outputBuffer_.readableBytes();
-    while (remain)
-    {
-        n = sockOption::write(channel_->fd_(), outputBuffer_.readBegin(), outputBuffer_.readableBytes());
-        if (n > 0)
+        Buffer& buf = outputBuffers_.front();
+        left        = buf.readableBytes();
+        while (left)
         {
-            remain -= n;
-            outputBuffer_.retrieve(n);
-        }
-        else
-        {
-            int err = sockOption::getSocketError(channel_->fd_());
-            if (err == EINTR) continue;
-
-            // wait for EPOLLHUP at the end
-            else if (err == EAGAIN || err == EWOULDBLOCK)
+            ssize_t n = sockOption::write(fd, buf.readBegin(), left);
+            if (n > 0)
             {
-                channel_->EnableWrite();
-                return false;
+                buf.retrieve(n);
             }
-
             else
             {
-                // completely break;
+                int err = sockOption::getSocketError(fd);
+                if (err == EAGAIN)
+                    return false;
+                else if (err == EINTR)
+                    continue;
+                else
                 {
-                    LOG_SYSERR << " TcpConnection::finish_in_out";
+                    {
+                        LOG_SYSERR << "TcpConnection::handleWrite," << " SO_ERROR = " << err << " " << strerrorInfo(err);
+                    }
+                    handle_ep_hup();
+                    // outputBuffers_.clear();
+                    return false;
                 }
-                handle_ep_hup();
-                return false;
             }
         }
-    }
-
-    if (!channel_->isWriting()) channel_->DisableWrite();
-    if (writeCompleteCallback_)
-    {
-        writeCompleteCallback_(shared_from_this());
+        if (buf.readableBytes() == 0)
+        {
+            if (writeCompleteCallback_)
+            {
+                loop_->queueInLoop([this, conn = shared_from_this()] { writeCompleteCallback_(conn); });
+            }
+            outputBuffers_.pop_front();
+        }
     }
 
     return true;
@@ -812,8 +1028,14 @@ void TcpConnection::handle_ep_rdhup()
         LOG_DEBUG << " fd = " << channel_->fd_() << " state = " << stateToString(old_state);
     }
 
-    rdhup_phrase = true;
+    if (old_state & Connecting)
+    {
+        futex_wait(&state_, old_state);
+        old_state = _load_acquire(&state_);
+    }
+
     if (finish_in_out()) handle_ep_hup();
+    rdhup_phrase = true;
 }
 
 // EPOLLHUP force close
@@ -834,12 +1056,14 @@ void TcpConnection::handle_ep_hup()
     }
 
     channel_->DisableAll();
+    channel_->reset_callbacks();
+    channel_->reset_listen_events();
     socket_->close();
 
     _store_release(&state_, Disconnected);
+    futex_wake(&state_);
 
     closeCallback_(shared_from_this());
-    futex_wake(&state_);
 }
 
 void TcpConnection::handle_ep_err()

@@ -5,7 +5,7 @@
 
 #include <functional>
 
-#include "Channel.h"
+#include "basics/Channel.h"
 
 // template <typename Sig, typename... Args>
 // void add_signal(Sig& mask, Args... args)

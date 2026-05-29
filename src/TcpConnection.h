@@ -1,13 +1,18 @@
 
 #pragma once
+#include <openssl/crypto.h>
+
+#include <forward_list>
 #include <memory>
 #include <string>
 
-#include "Buffer.h"
-#include "Channel.h"
 #include "EventLoop.h"
-#include "InetAddr.h"
+#include "Memorys/Buffer.h"
+#include "Sockets/InetAddr.h"
+#include "basics/Channel.h"
 #include "helpers/type_traits.h"
+
+#define senders_offset 6
 
 class TcpConnection;
 typedef std::shared_ptr<TcpConnection> TcpConnectionPtr;
@@ -30,9 +35,9 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     /// Constructs a TcpConnection with a connected sockfd
     ///
     /// User should not create this object.
-    explicit TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr);
-    explicit TcpConnection(Channel*&, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr);
-    ~TcpConnection();
+    explicit TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr, bool _keep_alive);
+    explicit TcpConnection(Channel*&, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr, bool _keep_alive);
+    virtual ~TcpConnection();
 
     EventLoop* getLoop() const;
     const std::string& name() const;
@@ -46,16 +51,20 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
     bool getTcpInfo(struct tcp_info*) const;
     std::string getTcpInfoString() const;
 
-    // void send(string&& message); // C++11
+    // void send(string&& message);
     void send(const void* message, int len);
     void send(const stringPiece& message);
-    // void send(Buffer&& message); // C++11
+    // void send(Buffer&& message);
     void send(Buffer* message);  // this one will swap data
-    void shutdown();             // NOT thread safe, no simultaneous calling
+
+    void send_OOB(const stringPiece& message);
+
+    void shutdown();  // thread safe
     void shutdown_write();
     // void shutdownAndForceCloseAfter(double seconds); // NOT thread safe, no simultaneous calling
     void forceClose();
     void forceCloseWithDelay(double seconds);
+
     void setTcpNoDelay(bool on);
     // reading or not
     void startRead();
@@ -68,24 +77,17 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
 
     // boost::any* getMutableContext() { return &context_; }
 
-    void setConnectionCallback(const ConnectionCallback& cb) { connectionCallback_ = cb; }
-
-    void setMessageCallback(const MessageCallback& cb) { messageCallback_ = cb; }
-
-    void setWriteCompleteCallback(const WriteCompleteCallback& cb) { writeCompleteCallback_ = cb; }
-
-    void setCloseCallback(const CloseCallback& cb) { closeCallback_ = cb; }
-
-    void setHighWaterMarkCallback(const HighWaterMarkCallback& cb, size_t highWaterMark)
-    {
-        highWaterMarkCallback_ = cb;
-        highWaterMark_         = highWaterMark;
-    }
+    void setConnectionCallback(const ConnectionCallback& cb);
+    void setMessageCallback(const MessageCallback& cb);
+    void set_OOB_callback(std::function<void(const TcpConnectionPtr&, char)>);
+    void setWriteCompleteCallback(const WriteCompleteCallback& cb);
+    void setCloseCallback(const CloseCallback& cb);
+    void setHighWaterMarkCallback(const HighWaterMarkCallback& cb, size_t highWaterMark);
 
     /// Advanced interface
     Buffer* inputBuffer() { return &inputBuffer_; }
 
-    Buffer* outputBuffer() { return &outputBuffer_; }
+    std::forward_list<Buffer>& outputBuffer() { return outputBuffers_; }
 
     /// Internal use only.
 
@@ -111,10 +113,11 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
 
    private:
     Buffer inputBuffer_;
-    Buffer outputBuffer_;  // FIXME: use list<Buffer> as output buffer.
+    std::forward_list<Buffer> outputBuffers_;
 
     ConnectionCallback connectionCallback_;
     MessageCallback messageCallback_;
+    std::function<void(const TcpConnectionPtr&, char)> OOB_messageCallback_;
     WriteCompleteCallback writeCompleteCallback_;
     HighWaterMarkCallback highWaterMarkCallback_;
     CloseCallback closeCallback_;
@@ -134,17 +137,19 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
 
     size_t highWaterMark_;
 
+    // virtual for ssl_TcpConnection
     void handle_ep_pri();
-    void handle_ep_in();
-    void handle_ep_out();
-    bool finish_in_out();
+    virtual void handle_ep_in();
+    virtual void handle_ep_out();
+    virtual bool finish_in_out();
     void handle_ep_rdhup();
-    void handle_ep_hup();
+    virtual void handle_ep_hup();
     void handle_ep_err();
 
     // void sendInLoop(string&& message);
     void sendInLoop(const stringPiece message);
-    void sendInLoop(const void* message, size_t len);
+    //  virtual for ssl_TcpConnection
+    virtual void sendInLoop(const void* message, size_t len);
 
     void shutdownInLoop();
     // void shutdownAndForceCloseInLoop(double seconds);
@@ -158,6 +163,10 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection>
 
     EventLoop* loop_;
 
+    size_t oldLen = 0;
+
+    SSL* ssl_;
+    friend class ssl_TcpConnection;
     //  FIXME: creationTime_, lastReceiveTime_
     //         bytesReceived_, bytesSent_
 };

@@ -5,17 +5,17 @@
 #include <cstdio>
 #include <vector>
 
-#include "Buffer.h"
+#include "Memorys/Buffer.h"
 
 std::atomic<int> g_request_count{0};
 
 #include <unistd.h>
 
-#include "../src/Logger.h"
-#include "../src/TcpServer.h"
-#include "../src/helpers/kw_micros.h"
-#include "AsyncLogger.h"
-#include "CurrentThread.h"
+#include "Loggers/AsyncLogger.h"
+#include "Loggers/Logger.h"
+#include "TcpServer.h"
+#include "Threads/CurrentThread.h"
+#include "helpers/kw_micros.h"
 
 int numThreads = 0;
 
@@ -39,6 +39,13 @@ class EchoServer
     {
         server_.setConnectionCallback([this](TcpConnectionPtr conn) { onConnection(conn); });
         server_.setMessageCallback([this](TcpConnectionPtr conn, Buffer* buf) { onMessage(conn, buf); });
+        server_.set_OOB_callback(
+            [=](TcpConnectionPtr conn, char _oob)
+            {
+                Buffer buf(1);
+                buf.append(&_oob);
+                onMessage(conn, &buf);
+            });
         server_.setThreadNum(numThreads);
     }
 
@@ -54,7 +61,8 @@ class EchoServer
         {
             LOG_DEBUG << " send quit,fd=" << conn->get_fd();
         }
-        conn->send("quit\n");
+        // conn->send_OOB("quit\n");
+        conn->forceClose();
     }
 
     void onMessage(const TcpConnectionPtr& conn, Buffer* buf)

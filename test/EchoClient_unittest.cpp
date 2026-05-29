@@ -5,12 +5,12 @@
 #include <csignal>
 #include <cstddef>
 
-#include "AsyncLogger.h"
-#include "CurrentThread.h"
 #include "EventLoop.h"
-#include "InetAddr.h"
-#include "Logger.h"
+#include "Loggers/AsyncLogger.h"
+#include "Loggers/Logger.h"
+#include "Sockets/InetAddr.h"
 #include "TcpClient.h"
+#include "Threads/CurrentThread.h"
 
 int numThreads = 0;
 class EchoClient;
@@ -33,10 +33,17 @@ std::vector<stringPiece> tcp_unpack(std::string& msg)
 class EchoClient
 {
    public:
-    EchoClient(EventLoop* loop, const InetAddr& listenAddr, const std::string& id) : loop_(loop), client_(loop, listenAddr, "EchoClient" + id)
+    EchoClient(EventLoop* loop, const InetAddr& listenAddr, const std::string& id) : loop_(loop), client_(loop, listenAddr, "EchoClient" + id, true)
     {
         client_.setConnectionCallback(std::bind(&EchoClient::onConnection, this, std::placeholders::_1));
         client_.setMessageCallback(std::bind(&EchoClient::onMessage, this, std::placeholders::_1, std::placeholders::_2));
+        client_.set_OOB_callback(
+            [=](TcpConnectionPtr conn, char _oob)
+            {
+                Buffer buf(1);
+                buf.append(&_oob);
+                onMessage(conn, &buf);
+            });
         // client_.enableRetry();
     }
 
@@ -73,8 +80,9 @@ class EchoClient
         {
             if (msg == "quit\n")
             {
-                conn->send("bye\n");
+                // conn->send("bye\n");
                 conn->set_unused();
+                conn->shutdown();
             }
 
             if (msg == "bye\n")

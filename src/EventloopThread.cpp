@@ -3,10 +3,10 @@
 #include <cassert>
 #include <string>
 
-#include "CountDownLatch.h"
 #include "EventLoop.h"
-#include "Logger.h"
-#include "Thread.h"
+#include "Loggers/Logger.h"
+#include "Threads/CountDownLatch.h"
+#include "Threads/Thread.h"
 
 void default_cb(EventLoop* l) {}
 

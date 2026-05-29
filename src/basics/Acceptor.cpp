@@ -1,0 +1,124 @@
+
+#include "Acceptor.h"
+
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <cassert>
+
+#include "../EventLoop.h"
+#include "../Loggers/Logger.h"
+#include "../Sockets/InetAddr.h"
+#include "../Sockets/Socket.h"
+#include "../Sockets/SocketOps.h"
+#include "Channel.h"
+
+Acceptor::Acceptor(EventLoop* loop, const InetAddr& listenAddr, bool reuseport) : loop_(loop), acceptSocket_(sockOption::createNonblockingOrDie(listenAddr.family())), listening_(false), idleFd_(::open("/dev/null", O_RDONLY | O_CLOEXEC))
+{
+    assert(idleFd_ >= 0);
+    acceptChannel_ = loop->add_channel(acceptSocket_.fd_());
+    acceptSocket_.setReuseAddr(true);
+    acceptSocket_.setReusePort(reuseport);
+    acceptSocket_.bind(listenAddr);
+    acceptSocket_.listen();
+    acceptChannel_->set_in_callback([this] { handleRead(); });
+}
+
+Acceptor::~Acceptor()
+{
+    LOG_DEBUG << " ";
+    if (listening_) acceptChannel_->DisableRead();
+    // acceptChannel_->remove();
+    ::close(idleFd_);
+}
+
+void Acceptor::listen()
+{
+    LOG_TRACE << " Acceptor::listen";
+    loop_->assertInLoopThread();
+    listening_ = true;
+    acceptChannel_->EnableRead();
+}
+
+void Acceptor::stop()
+{
+    LOG_DEBUG << " ";
+    loop_->runInLoop(
+        [&]
+        {
+            acceptChannel_->DisableRead();
+            listening_ = false;
+        });
+}
+
+void Acceptor::handleRead()
+{
+    LOG_TRACE << "Acceptor::handleRead";
+    loop_->assertInLoopThread();
+    InetAddr* peerAddr = new InetAddr;
+
+    int k = 0;
+
+    while (1)
+    {
+        int connfd     = acceptSocket_.accept(peerAddr);
+        int savedErrno = errno;
+        if (connfd >= 0)
+        {
+            ++k;
+            LOG_TRACE << "new connection come";
+            if (newConnectionCallback_)
+            {
+                LOG_TRACE << "newConnectionCallback_";
+                newConnectionCallback_(connfd, peerAddr);
+            }
+            else
+            {
+                sockOption::close(connfd);
+            }
+        }
+        else
+        {
+            switch (savedErrno)
+            {
+                case EMFILE:
+                    LOG_WARN << " EMFILE,per-process lmit of open file desctiptor";  // per-process lmit of open file desctiptor ???
+                case EAGAIN:
+                case ECONNABORTED:
+                case EPROTO:  // ???
+                case EINTR:
+                case EPERM:
+                    // expected errors
+                    errno = savedErrno;
+                    break;
+                case EBADF:
+                case EFAULT:
+                case EINVAL:
+                case ENFILE:
+                case ENOBUFS:
+                case ENOMEM:
+                case ENOTSOCK:
+                case EOPNOTSUPP:
+                    // unexpected errors
+                    LOG_ERROR << "unexpected error of ::accept " << savedErrno;
+                    break;
+                default:
+                    LOG_ERROR << "unknown error of ::accept " << savedErrno;
+                    break;
+            }
+
+            if (--k == -32) break;
+            // LOG_SYSERR << "in Acceptor::handleRead";
+            // // Read the section named "The special problem of
+            // // accept()ing when you can't" in libev's doc.
+            // // By Marc Lehmann, author of libev.
+            // if (savedErrno == EMFILE)
+            // {
+            //     ::close(idleFd_);
+            //     idleFd_ = ::accept(acceptSocket_.fd_(), NULL, NULL);
+            //     ::close(idleFd_);
+            //     idleFd_ = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+            // }
+        }
+    }
+}

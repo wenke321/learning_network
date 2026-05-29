@@ -5,13 +5,14 @@
 #include <csignal>
 #include <memory>
 
-#include "Acceptor.h"
-#include "Channel.h"
 #include "EventLoop.h"
-#include "InetAddr.h"
-#include "Logger.h"
+#include "Loggers/Logger.h"
 #include "SignalHandler.h"
+#include "Sockets/InetAddr.h"
+#include "Sockets/SocketOps.h"
 #include "TcpConnection.h"
+#include "basics/Acceptor.h"
+#include "basics/Channel.h"
 #include "helpers/builtins.h"
 
 TcpServer::TcpServer(EventLoop* loop, const InetAddr& listenAddr, const std::string& nameArg, Option option) : loop_(loop), ipPort_(listenAddr.ipPortStr()), name_(nameArg), threadPool_(new EventloopThreadPool(loop, name_)), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), nextConnId_(1), acceptor_(new Acceptor(loop, listenAddr, option == ReusePort)), signal_handler()
@@ -67,7 +68,8 @@ void TcpServer::newConnection(int sockfd, const InetAddr* peerAddr)
     // FIXME poll with zero timeout to double confirm the new connection
     // FIXME use make_shared if necessary
     InetAddr* localAddr   = new InetAddr(sockOption::getLocalAddr(sockfd));
-    TcpConnectionPtr conn = std::make_shared<TcpConnection>(ioLoop, connName, sockfd, localAddr, peerAddr);
+    bool keep_alive       = sockOption::get_keep_alive(sockfd);
+    TcpConnectionPtr conn = std::make_shared<TcpConnection>(ioLoop, connName, sockfd, localAddr, peerAddr, keep_alive);
     conn->setConnectionCallback(connectionCallback_);
     conn->setMessageCallback(messageCallback_);
     conn->setWriteCompleteCallback(writeCompleteCallback_);
