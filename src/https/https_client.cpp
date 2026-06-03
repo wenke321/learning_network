@@ -79,7 +79,7 @@ int http_client::on_msg_complete(llhttp_t* _parser)
     return 0;
 }
 
-http_client::http_client(EventLoop* _loop, const std::string& _CA, bool _keep_alive) : headers_complete(false), msg_complete(false), loop_(_loop), ssl_ctx(std::make_shared<ssl_context>())
+http_client::http_client(EventLoop* _loop, const std::string& _CA) : headers_complete(false), msg_complete(false), loop_(_loop), ssl_ctx(std::make_shared<ssl_context>())
 {
     {
         LOG_DEBUG << " ";
@@ -102,7 +102,11 @@ http_client::http_client(EventLoop* _loop, const std::string& _CA, bool _keep_al
 
 http_client::~http_client() {}
 
-void http_client::get(const std::string& url, const std::unordered_map<std::string, std::string>& headers, response_callback cb, error_callback errCb)
+void http_client::force_close(const std::string _full_url) { clients[_full_url]->force_close(); }
+
+void http_client::set_close_callback(std::function<void()> _cb) { close_cb = _cb; }
+
+void http_client::get(const std::string& url, const std::unordered_map<std::string, std::string>& headers, response_callback _resp_cb, error_callback errCb, bool keep_alive)
 {
     {
         LOG_DEBUG << " ";
@@ -120,8 +124,8 @@ void http_client::get(const std::string& url, const std::unordered_map<std::stri
     resetParser();
 
     // 保存回调
-    resp_cb = std::move(cb);
-    err_cb  = std::move(errCb);
+    resp_cb = _resp_cb;
+    err_cb  = errCb;
 
     // 构造 HTTP 请求行和头部
     Buffer buf;
@@ -154,15 +158,18 @@ void http_client::get(const std::string& url, const std::unordered_map<std::stri
     buf.append("\r\n");
     request_bufs.emplace_front(std::move(buf));
 
-    // 每次请求都新建 TcpClient，保证状态干净且可并发（每个实例一个）
-    client_ = std::make_unique<TcpClient>(loop_, InetAddr(sockOption::resolve_domain_ipv4(host.data()), port, 0), "https_client", keep_alive);
-    client_->enbale_ssl(ssl_ctx, host);  // 设置 SSL 并指定 SNI 主机名
-    client_->setConnectionCallback([&](const TcpConnectionPtr& conn) { on_connection(conn); });
-    client_->setMessageCallback([&](const TcpConnectionPtr& _conn, Buffer* _buf) { on_message(_conn, _buf); });
-    client_->connect();
+    if (clients.find(url) == clients.end())
+    {
+        clients[url] = new TcpClient(loop_, InetAddr(sockOption::resolve_domain_ipv4(host.data()), port, 0), "https_client", keep_alive);
+        clients[url]->enbale_ssl(ssl_ctx, host);
+        clients[url]->setConnectionCallback([&](const TcpConnectionPtr& conn) { on_connection(conn); });
+        clients[url]->setMessageCallback([&](const TcpConnectionPtr& _conn, Buffer* _buf) { on_message(_conn, _buf); });
+        // clients[url]->set_close_callback(close_cb);
+    }
+    if (!clients[url]->get_connect()) clients[url]->connect();
 }
 
-void http_client::post(const std::string& url, const std::unordered_map<std::string, std::string>& headers, std::string body, response_callback cb, error_callback errCb)
+void http_client::post(const std::string& url, const std::unordered_map<std::string, std::string>& headers, std::string body, response_callback cb, error_callback errCb, bool keep_alive)
 {
     // 解析 URL
     std::string host, path;
@@ -220,12 +227,15 @@ void http_client::post(const std::string& url, const std::unordered_map<std::str
     buf.append(body);
     request_bufs.emplace_front(std::move(buf));
 
-    // 每次请求都新建 TcpClient，保证状态干净且可并发（每个实例一个）
-    client_ = std::make_unique<TcpClient>(loop_, InetAddr(sockOption::resolve_domain_ipv4(host.data()), port, 0), "https_client", keep_alive);
-    client_->enbale_ssl(ssl_ctx, host);  // 设置 SSL 并指定 SNI 主机名
-    client_->setConnectionCallback([&](const TcpConnectionPtr& conn) { on_connection(conn); });
-    client_->setMessageCallback([&](const TcpConnectionPtr& _conn, Buffer* _buf) { on_message(_conn, _buf); });
-    client_->connect();
+    if (clients.find(url) == clients.end())
+    {
+        clients[url] = new TcpClient(loop_, InetAddr(sockOption::resolve_domain_ipv4(host.data()), port, 0), "https_client", keep_alive);
+        clients[url]->enbale_ssl(ssl_ctx, host);
+        clients[url]->setConnectionCallback([&](const TcpConnectionPtr& conn) { on_connection(conn); });
+        clients[url]->setMessageCallback([&](const TcpConnectionPtr& _conn, Buffer* _buf) { on_message(_conn, _buf); });
+        // clients[url]->set_close_callback(close_cb);
+    }
+    if (!clients[url]->get_connect()) clients[url]->connect();
 }
 
 void http_client::on_connection(const TcpConnectionPtr& _conn)
@@ -258,7 +268,9 @@ void http_client::on_message(const TcpConnectionPtr& _conn, Buffer* _buf)
     if (ret == HPE_OK && msg_complete)
     {
         resp_cb(response);
-        _conn->shutdown();
+        resetParser();
+        // response.clear();
+        //  _conn->shutdown();
     }
     else if (ret != HPE_OK && ret != HPE_PAUSED)
     {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <forward_list>
 #include <functional>
 #include <memory>
@@ -9,6 +10,7 @@
 #include "../../third-party/JSON/include/json.hpp"
 #include "../../third-party/llhttp/include/llhttp.h"
 #include "../TcpClient.h"
+#include "../helpers/builtins.h"
 #include "ssl_TcpConnection.h"
 #include "ssl_context.h"
 
@@ -18,7 +20,8 @@ struct http_response
     std::unordered_map<std::string, std::string> headers;
     std::string body;
 
-    nlohmann::json json() const { return nlohmann::json::parse(body); }
+    nlohmann::json body_json() const { return nlohmann::json::parse(body); }
+    void clear() { memset(_addressof(status_code), 0, sizeof(http_response)); }
 };
 
 class http_client
@@ -28,11 +31,15 @@ class http_client
     typedef std::function<void(const std::string&)> error_callback;
     // typedef std::shared_ptr<ssl_TcpConnection> ssl_tcpconnection_ptr;
 
-    http_client(EventLoop* _loop, const std::string& _CA, bool _keep_alive = false);
+    http_client(EventLoop* _loop, const std::string& _CA);
     ~http_client();
 
-    void get(const std::string& url, const std::unordered_map<std::string, std::string>& headers, response_callback cb, error_callback errCb);
-    void post(const std::string& url, const std::unordered_map<std::string, std::string>& headers, std::string body, response_callback cb, error_callback errCb);
+    void get(const std::string& url, const std::unordered_map<std::string, std::string>& headers, response_callback resp_cb, error_callback errCb, bool keep_alive);
+    void post(const std::string& url, const std::unordered_map<std::string, std::string>& headers, std::string body, response_callback cb, error_callback errCb, bool keep_alive);
+
+    void force_close(const std::string _full_url);
+
+    void set_close_callback(std::function<void()> _cb);
 
    private:
     void on_connection(const TcpConnectionPtr&);
@@ -54,12 +61,12 @@ class http_client
     http_response response;
     bool headers_complete;
     bool msg_complete;
-    bool keep_alive;
+    std::function<void()> close_cb;
     std::string cur_header_field;
     std::string cur_header_val;
     response_callback resp_cb;
     error_callback err_cb;
-    std::unique_ptr<TcpClient> client_;
+    std::unordered_map<std::string, TcpClient*> clients;
     std::shared_ptr<ssl_context> ssl_ctx;
     std::forward_list<Buffer> request_bufs;
     Buffer response_buf;

@@ -23,6 +23,7 @@ class Connector : public std::enable_shared_from_this<Connector>
 
     const InetAddr& serverAddress() const { return serverAddr_; }
     Channel*& ch_() { return channel_; }
+    void resetChannel();
 
    private:
     enum States
@@ -44,7 +45,6 @@ class Connector : public std::enable_shared_from_this<Connector>
     void handle_err();
     void retry(int sockfd);
     int removeAndResetChannel();
-    void resetChannel();
 
     EventLoop* loop_;
     InetAddr serverAddr_;

@@ -16,7 +16,7 @@ Connector::Connector(EventLoop* loop, const InetAddr& serverAddr) : loop_(loop),
 Connector::~Connector()
 {
     LOG_TRACE << "dtor[" << this << "]";
-    assert(!channel_);
+    assert(channel_ == nullptr);
 }
 
 void Connector::start()

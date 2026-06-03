@@ -14,6 +14,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+
 find_package(OpenSSL REQUIRED)
 
 
@@ -66,6 +67,7 @@ target_link_libraries(network_static PUBLIC pthread rt OpenSSL::SSL OpenSSL::Cry
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(network_dynamic PUBLIC -Wall -Wextra -Wpedantic)
+    target_compile_options(network_static PUBLIC -Wall -Wextra -Wpedantic -fPIC)
 endif()
 
 

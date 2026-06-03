@@ -11,6 +11,7 @@ class ssl_TcpConnection : public TcpConnection
 {
    public:
     ssl_TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr, bool _keep_alive, SSL* ssl);
+    ssl_TcpConnection(Channel*&, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr, bool _keep_alive, SSL* ssl);
     ~ssl_TcpConnection();
 
    private:
