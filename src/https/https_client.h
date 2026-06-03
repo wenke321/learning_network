@@ -24,11 +24,12 @@ struct http_response
     void clear() { memset(_addressof(status_code), 0, sizeof(http_response)); }
 };
 
+typedef std::function<void(const http_response)> response_callback;
+typedef std::function<void(const std::string&)> error_callback;
+
 class http_client
 {
    public:
-    typedef std::function<void(const http_response)> response_callback;
-    typedef std::function<void(const std::string&)> error_callback;
     // typedef std::shared_ptr<ssl_TcpConnection> ssl_tcpconnection_ptr;
 
     http_client(EventLoop* _loop, const std::string& _CA);
