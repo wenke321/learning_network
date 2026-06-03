@@ -2,6 +2,7 @@
 
 #include <openssl/ssl.h>
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -27,6 +28,9 @@ class TcpClient
     void connect();
     void disconnect();
     void stop();
+    void force_close();
+
+    bool get_connect();
 
     TcpConnectionPtr connection() const
     {
@@ -72,6 +76,8 @@ class TcpClient
     MessageCallback messageCallback_;
     std::function<void(const TcpConnectionPtr&, char)> OOB_callback;
     WriteCompleteCallback writeCompleteCallback_;
+    // for uper layer
+    std::function<void()> close_callback;
     bool retry_;    // atomic
     bool connect_;  // atomic
     bool keep_alive;

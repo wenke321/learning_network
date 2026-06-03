@@ -35,7 +35,7 @@ void removeConnector(const ConnectorPtr& connector)
     while (connector.use_count() > 1) sched_yield();
 }
 
-TcpClient::TcpClient(EventLoop* loop, const InetAddr& serverAddr, const std::string& nameArg, bool _keep_alive) : loop_(loop), connector_(new Connector(loop, serverAddr)), name_(nameArg), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), retry_(false), connect_(true), keep_alive(_keep_alive), nextConnId_(1)
+TcpClient::TcpClient(EventLoop* loop, const InetAddr& serverAddr, const std::string& nameArg, bool _keep_alive) : loop_(loop), connector_(new Connector(loop, serverAddr)), name_(nameArg), connectionCallback_(defaultConnectionCallback), messageCallback_(defaultMessageCallback), retry_(false), connect_(false), keep_alive(_keep_alive), nextConnId_(1)
 {
     connector_->setNewConnectionCallback([this](int fd) { newConnection(fd); });
     // FIXME setConnectFailedCallback
@@ -44,7 +44,7 @@ TcpClient::TcpClient(EventLoop* loop, const InetAddr& serverAddr, const std::str
     }
 }
 
-TcpClient::TcpClient(EventLoop* loop, const std::string& nameArg) : loop_(loop), name_(nameArg), retry_(false), connect_(true), nextConnId_(1) {}
+TcpClient::TcpClient(EventLoop* loop, const std::string& nameArg) : loop_(loop), name_(nameArg), retry_(false), connect_(false), nextConnId_(1) {}
 
 TcpClient::~TcpClient()
 {
@@ -81,6 +81,8 @@ void TcpClient::enbale_ssl(std::shared_ptr<ssl_context> _ssl_ctx, std::string& h
     enable_ssl_  = true;
 }
 
+bool TcpClient::get_connect() { return connect_; }
+
 void TcpClient::connect()
 {
     // FIXME: check state
@@ -90,6 +92,8 @@ void TcpClient::connect()
     connect_ = true;
     connector_->start();
 }
+
+void TcpClient::force_close() { connection_->forceClose(); }
 
 void TcpClient::disconnect()
 {
@@ -139,7 +143,8 @@ void TcpClient::newConnection(int sockfd)
             [=](SSL* ssl, int fd)
             {
                 // 创建支持 SSL 的 TcpConnection（见后文）
-                TcpConnectionPtr conn(new ssl_TcpConnection(loop_, connName, fd, localAddr, peerAddr, keep_alive, ssl));
+                TcpConnectionPtr conn = std::make_shared<ssl_TcpConnection>(connector_->ch_(), connName, localAddr, peerAddr, keep_alive, ssl);
+                connector_->resetChannel();
                 conn->setConnectionCallback(connectionCallback_);
                 conn->setMessageCallback(messageCallback_);
                 conn->setWriteCompleteCallback(writeCompleteCallback_);
@@ -148,6 +153,7 @@ void TcpClient::newConnection(int sockfd)
                     MutexLockGuard lock(mutex_);
                     connection_ = conn;
                 }
+
                 conn->connectEstablished();  // 触发 Channel 事件监听
             },
             // 握手失败回调
@@ -170,7 +176,7 @@ void TcpClient::newConnection(int sockfd)
     {
         // FIXME poll with zero timeout to double confirm the new connection
         TcpConnectionPtr conn = std::make_shared<TcpConnection>(connector_->ch_(), connName, localAddr, peerAddr, keep_alive);
-
+        connector_->resetChannel();
         conn->setConnectionCallback(connectionCallback_);
         conn->setMessageCallback(messageCallback_);
         conn->setWriteCompleteCallback(writeCompleteCallback_);
@@ -179,6 +185,7 @@ void TcpClient::newConnection(int sockfd)
             MutexLockGuard lock(mutex_);
             connection_ = conn;
         }
+
         conn->connectEstablished();
     }
 }

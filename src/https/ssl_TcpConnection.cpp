@@ -7,6 +7,8 @@
 
 ssl_TcpConnection::ssl_TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const InetAddr* localAddr, const InetAddr* peerAddr, bool _keep_alive, SSL* ssl) : TcpConnection(loop, name, sockfd, localAddr, peerAddr, _keep_alive) { ssl_ = ssl; }
 
+ssl_TcpConnection::ssl_TcpConnection(Channel*& _ch, const std::string& name, const InetAddr* localAddr, const InetAddr* peerAddr, bool _keep_alive, SSL* ssl) : TcpConnection(_ch, name, localAddr, peerAddr, _keep_alive) { ssl_ = ssl; }
+
 ssl_TcpConnection::~ssl_TcpConnection() {}
 
 void ssl_TcpConnection::handle_ep_in()
